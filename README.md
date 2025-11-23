@@ -1,0 +1,290 @@
+# ExoStream
+
+Stream webcam from Raspberry Pi using GStreamer with hardware H.264 encoding and SRT (Secure Reliable Transport) protocol.
+
+## Features
+
+- **Hardware H.264 Encoding** - Utilizes Raspberry Pi's hardware encoder for minimal CPU usage
+- **SRT Streaming** - Reliable streaming with low latency over local network or internet
+- **Listener Mode** - Raspberry Pi acts as a server, clients connect to it
+- **Encryption Support** - Optional SRT passphrase encryption
+- **Quality Presets** - Easy configuration with low/medium/high presets
+- **Beautiful CLI** - Rich terminal interface with real-time information
+
+## Requirements
+
+### Hardware
+- Raspberry Pi 3 or 4
+- Logitech C920 or C930 webcam (or any USB webcam)
+- Network connection
+
+### Software
+- Python 3.8 or higher
+- GStreamer 1.x with SRT plugin
+- System packages (install on Raspberry Pi):
+
+```bash
+sudo apt-get update
+sudo apt-get install -y \
+    python3-pip \
+    python3-gst-1.0 \
+    gstreamer1.0-tools \
+    gstreamer1.0-plugins-base \
+    gstreamer1.0-plugins-good \
+    gstreamer1.0-plugins-bad \
+    gstreamer1.0-plugins-ugly \
+    gstreamer1.0-libav \
+    libgstreamer1.0-dev \
+    libcairo2-dev \
+    libgirepository1.0-dev
+```
+
+## Installation
+
+### On Raspberry Pi (Sender)
+
+1. Clone the repository:
+```bash
+git clone <repository-url>
+cd exostream
+```
+
+2. Install Python dependencies:
+```bash
+pip3 install -e .
+```
+
+3. Verify installation:
+```bash
+exostream --version
+```
+
+## Usage
+
+### Starting the Stream (Raspberry Pi)
+
+#### Basic Usage
+```bash
+exostream send
+```
+
+This will start streaming with default settings:
+- Device: `/dev/video0`
+- Resolution: 1920x1080
+- FPS: 30
+- Bitrate: 4000 kbps
+- Port: 9000
+
+#### List Available Cameras
+```bash
+exostream send --list-devices
+```
+
+#### Custom Configuration
+```bash
+exostream send \
+    --device /dev/video0 \
+    --port 9000 \
+    --resolution 1920x1080 \
+    --fps 30 \
+    --bitrate 4000
+```
+
+#### Using Presets
+```bash
+# Low quality (720p, 2Mbps)
+exostream send --preset low
+
+# Medium quality (1080p, 4Mbps) - default
+exostream send --preset medium
+
+# High quality (1080p, 6Mbps)
+exostream send --preset high
+```
+
+#### With Encryption
+```bash
+exostream send --passphrase "mysecretpassword"
+```
+
+#### Verbose Mode
+```bash
+exostream send --verbose
+```
+
+### Connecting to the Stream (Client Computer)
+
+Once the Raspberry Pi is streaming, you can connect from any computer on the network using various tools:
+
+#### Using VLC Media Player
+```bash
+vlc srt://<raspberry-pi-ip>:9000
+```
+
+#### Using FFplay (from FFmpeg)
+```bash
+ffplay srt://<raspberry-pi-ip>:9000
+```
+
+#### Using GStreamer (Linux)
+```bash
+gst-launch-1.0 \
+    srcsrc uri=srt://<raspberry-pi-ip>:9000 ! \
+    tsdemux ! \
+    h264parse ! \
+    avdec_h264 ! \
+    videoconvert ! \
+    autovideosink
+```
+
+#### Using OBS Studio
+1. Add a new Media Source
+2. Set URL to: `srt://<raspberry-pi-ip>:9000`
+3. Uncheck "Local File"
+
+### Finding Your Raspberry Pi's IP Address
+```bash
+hostname -I
+```
+
+## Configuration Options
+
+### Command Line Options
+
+| Option | Short | Default | Description |
+|--------|-------|---------|-------------|
+| `--device` | `-d` | `/dev/video0` | Video device path |
+| `--port` | `-p` | `9000` | SRT port to listen on |
+| `--resolution` | `-r` | `1920x1080` | Video resolution |
+| `--fps` | `-f` | `30` | Frames per second |
+| `--bitrate` | `-b` | `4000` | Video bitrate in kbps |
+| `--preset` | | | Quality preset (low/medium/high) |
+| `--passphrase` | | | SRT encryption passphrase |
+| `--list-devices` | `-l` | | List available devices and exit |
+| `--verbose` | `-v` | | Enable verbose logging |
+
+### Quality Presets
+
+| Preset | Resolution | FPS | Bitrate | Use Case |
+|--------|-----------|-----|---------|----------|
+| low | 1280x720 | 25 | 2 Mbps | Low bandwidth networks |
+| medium | 1920x1080 | 30 | 4 Mbps | Balanced quality/bandwidth |
+| high | 1920x1080 | 30 | 6 Mbps | High quality, good network |
+
+## Troubleshooting
+
+### No video devices found
+Make sure your webcam is connected and recognized:
+```bash
+ls -l /dev/video*
+v4l2-ctl --list-devices
+```
+
+### Port already in use
+Check if another process is using the port:
+```bash
+sudo netstat -tulpn | grep 9000
+```
+
+### Pipeline fails to start
+Check GStreamer installation and SRT plugin:
+```bash
+gst-inspect-1.0 srtsink
+gst-inspect-1.0 v4l2h264enc  # Pi 4
+gst-inspect-1.0 omxh264enc   # Pi 3
+```
+
+### High CPU usage
+- Make sure hardware encoder is being used (check logs)
+- Try lowering resolution or bitrate
+- Use a quality preset instead of custom settings
+
+### Stream is choppy or has artifacts
+- Increase SRT latency: The latency is currently hardcoded to 120ms in the config
+- Reduce bitrate or resolution
+- Check network stability
+- Ensure good lighting for the camera
+
+## Architecture
+
+```
+Raspberry Pi (Sender)                    Client Computer
+     Webcam                                  Display
+       ↓                                        ↑
+   V4L2 Capture                            SRT Client
+       ↓                                        ↑
+Hardware H.264 Encoder                    H.264 Decoder
+       ↓                                        ↑
+   SRT Listener  ←------- Network -------  SRT Caller
+   (Port 9000)
+```
+
+### Pipeline Structure
+
+The GStreamer pipeline on the Raspberry Pi:
+```
+v4l2src → capsfilter → queue → v4l2h264enc/omxh264enc → 
+h264parse → mpegtsmux → queue → srtsink
+```
+
+## Development
+
+### Project Structure
+```
+exostream/
+├── exostream/
+│   ├── __init__.py
+│   ├── cli.py              # Main CLI entry point
+│   ├── common/
+│   │   ├── config.py       # Configuration management
+│   │   ├── logger.py       # Logging setup
+│   │   ├── network.py      # Network utilities
+│   │   └── gst_utils.py    # GStreamer helpers
+│   └── sender/
+│       ├── webcam.py       # V4L2 device detection
+│       ├── encoder.py      # GStreamer encoding pipeline
+│       └── cli.py          # Sender CLI commands
+├── requirements.txt
+├── setup.py
+└── README.md
+```
+
+### Running Tests
+```bash
+# TODO: Add tests
+pytest
+```
+
+## Roadmap
+
+### Phase 2: Robustness (Coming Soon)
+- [ ] Error handling and reconnection logic
+- [ ] Graceful shutdown
+- [ ] Configuration file support
+
+### Phase 3: Advanced Features
+- [ ] Multiple quality presets
+- [ ] Real-time stats dashboard
+- [ ] Recording while streaming
+- [ ] Adaptive bitrate
+
+### Phase 4: Polish
+- [ ] Beautiful terminal UI with live stats
+- [ ] Network bandwidth adaptive bitrate
+- [ ] Automatic reconnection
+- [ ] Web-based configuration interface
+
+## License
+
+MIT License - see LICENSE file for details
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## Acknowledgments
+
+- GStreamer team for the excellent multimedia framework
+- SRT Alliance for the SRT protocol
+- Raspberry Pi Foundation for the amazing hardware
+
