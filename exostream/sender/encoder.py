@@ -126,11 +126,20 @@ class StreamEncoder:
             elements['encoder'] = Gst.ElementFactory.make(self.encoder_name, "encoder")
             self._configure_encoder(elements['encoder'])
             
-            # H.264 parser
+            # H.264 parser - ensure proper stream format
             elements['h264parse'] = Gst.ElementFactory.make("h264parse", "h264parse")
+            elements['h264parse'].set_property("config-interval", 1)  # Send SPS/PPS with every IDR
+            
+            # Caps after h264parse to ensure proper format
+            elements['h264_caps'] = Gst.ElementFactory.make("capsfilter", "h264_caps")
+            h264_caps = Gst.Caps.from_string(
+                "video/x-h264,stream-format=byte-stream,alignment=au"
+            )
+            elements['h264_caps'].set_property("caps", h264_caps)
             
             # MPEG-TS muxer (required for SRT)
             elements['muxer'] = Gst.ElementFactory.make("mpegtsmux", "muxer")
+            # Don't set alignment property, let it negotiate
             
             # Queue before sink
             elements['queue2'] = Gst.ElementFactory.make("queue", "queue2")
@@ -157,7 +166,8 @@ class StreamEncoder:
             elements['encoder_caps'].link(elements['queue1'])
             elements['queue1'].link(elements['encoder'])
             elements['encoder'].link(elements['h264parse'])
-            elements['h264parse'].link(elements['muxer'])
+            elements['h264parse'].link(elements['h264_caps'])
+            elements['h264_caps'].link(elements['muxer'])
             elements['muxer'].link(elements['queue2'])
             elements['queue2'].link(elements['srtsink'])
         except Exception as e:
@@ -194,7 +204,10 @@ class StreamEncoder:
             encoder.set_property("speed-preset", "ultrafast")
             encoder.set_property("tune", "zerolatency")
             encoder.set_property("key-int-max", self.video_config.keyframe_interval)
-            logger.warning("Using software encoder - this may be slow on Raspberry Pi!")
+            encoder.set_property("byte-stream", True)  # Ensure byte-stream output
+            encoder.set_property("aud", False)  # No access unit delimiters
+            encoder.set_property("sliced-threads", False)  # Better for streaming
+            logger.info("Using software encoder (x264enc) - reliable but uses more CPU")
     
     def _configure_srt_sink(self, srtsink: Gst.Element):
         """Configure the SRT sink element"""
@@ -204,6 +217,7 @@ class StreamEncoder:
         
         srtsink.set_property("uri", srt_uri)
         srtsink.set_property("mode", "listener")  # Act as server
+        srtsink.set_property("wait-for-connection", False)  # Don't wait, stream immediately
         
         # Optional: Set passphrase for encryption
         if self.srt_config.passphrase:
@@ -288,6 +302,14 @@ class StreamEncoder:
         elif t == Gst.MessageType.INFO:
             info, debug = message.parse_info()
             logger.info(f"Pipeline info: {info.message}")
+        
+        elif t == Gst.MessageType.ELEMENT:
+            # Log element-specific messages (like SRT connection events)
+            structure = message.get_structure()
+            if structure and structure.get_name() == "GstSRTSinkStats":
+                logger.info("SRT client connected!")
+            elif structure:
+                logger.debug(f"Element message: {structure.get_name()}")
     
     def get_stats(self) -> dict:
         """
