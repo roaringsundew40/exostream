@@ -131,16 +131,12 @@ class StreamEncoder:
             # Insert SPS/PPS before EVERY IDR frame
             elements['h264parse'].set_property("config-interval", -1)  # -1 = insert before every IDR
             
-            # Caps after h264parse - ensure proper format
-            elements['h264_caps'] = Gst.ElementFactory.make("capsfilter", "h264_caps")
-            h264_caps = Gst.Caps.from_string(
-                "video/x-h264,stream-format=byte-stream,alignment=au,profile=baseline"
+            # Video caps - force proper H.264 format for streaming
+            elements['video_caps'] = Gst.ElementFactory.make("capsfilter", "video_caps")
+            video_caps = Gst.Caps.from_string(
+                "video/x-h264,stream-format=byte-stream,alignment=nal,profile=baseline"
             )
-            elements['h264_caps'].set_property("caps", h264_caps)
-            
-            # MPEG-TS muxer (required for SRT)
-            elements['muxer'] = Gst.ElementFactory.make("mpegtsmux", "muxer")
-            # Don't set alignment property, let it negotiate
+            elements['video_caps'].set_property("caps", video_caps)
             
             # Queue before sink
             elements['queue2'] = Gst.ElementFactory.make("queue", "queue2")
@@ -167,9 +163,8 @@ class StreamEncoder:
             elements['encoder_caps'].link(elements['queue1'])
             elements['queue1'].link(elements['encoder'])
             elements['encoder'].link(elements['h264parse'])
-            elements['h264parse'].link(elements['h264_caps'])
-            elements['h264_caps'].link(elements['muxer'])
-            elements['muxer'].link(elements['queue2'])
+            elements['h264parse'].link(elements['video_caps'])
+            elements['video_caps'].link(elements['queue2'])
             elements['queue2'].link(elements['srtsink'])
         except Exception as e:
             logger.error(f"Failed to link pipeline elements: {e}")
