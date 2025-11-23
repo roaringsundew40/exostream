@@ -25,7 +25,8 @@ class StreamEncoder:
         device_path: str,
         video_config: VideoConfig,
         srt_config: SRTConfig,
-        on_error: Optional[Callable] = None
+        on_error: Optional[Callable] = None,
+        use_software_encoder: bool = False
     ):
         """
         Initialize the stream encoder
@@ -35,22 +36,28 @@ class StreamEncoder:
             video_config: Video encoding configuration
             srt_config: SRT streaming configuration
             on_error: Callback function for errors
+            use_software_encoder: Force software encoding (x264enc) instead of hardware
         """
         self.device_path = device_path
         self.video_config = video_config
         self.srt_config = srt_config
         self.on_error = on_error
+        self.use_software_encoder = use_software_encoder
         
         self.pipeline: Optional[Gst.Pipeline] = None
         self.loop: Optional[GLib.MainLoop] = None
         self.bus: Optional[Gst.Bus] = None
         
-        # Detect hardware encoder
-        self.encoder_name = detect_h264_encoder()
+        # Detect encoder
+        self.encoder_name = detect_h264_encoder(prefer_software=use_software_encoder)
         if not self.encoder_name:
             raise RuntimeError("No H.264 encoder found!")
         
-        logger.info(f"Using encoder: {self.encoder_name}")
+        if self.encoder_name == 'x264enc':
+            logger.warning("Using SOFTWARE encoder (x264enc) - this will use more CPU")
+            logger.warning("Hardware encoder (v4l2h264enc) may be unavailable or buggy on your system")
+        else:
+            logger.info(f"Using encoder: {self.encoder_name}")
         
         # Check SRT support
         if not check_srt_support():

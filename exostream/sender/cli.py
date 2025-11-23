@@ -30,9 +30,10 @@ def cli():
 @click.option('--bitrate', '-b', default=4000, type=int, help='Video bitrate in kbps')
 @click.option('--preset', default=None, help='Quality preset (low, medium, high)')
 @click.option('--passphrase', default=None, help='SRT encryption passphrase')
+@click.option('--software-encoder', '-s', is_flag=True, help='Use software encoder (x264enc) instead of hardware')
 @click.option('--list-devices', '-l', is_flag=True, help='List available video devices and exit')
 @click.option('--verbose', '-v', is_flag=True, help='Verbose logging')
-def send(device, port, resolution, fps, bitrate, preset, passphrase, list_devices, verbose):
+def send(device, port, resolution, fps, bitrate, preset, passphrase, software_encoder, list_devices, verbose):
     """Start streaming from webcam"""
     
     # Setup logger
@@ -122,7 +123,8 @@ def send(device, port, resolution, fps, bitrate, preset, passphrase, list_device
             device_path=device,
             video_config=config.video,
             srt_config=config.srt,
-            on_error=lambda msg: console.print(f"[red]Error: {msg}[/red]")
+            on_error=lambda msg: console.print(f"[red]Error: {msg}[/red]"),
+            use_software_encoder=software_encoder
         )
         
         encoder.start()

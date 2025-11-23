@@ -44,19 +44,27 @@ def check_gst_element(element_name: str) -> bool:
     return factory is not None
 
 
-def detect_h264_encoder() -> Optional[str]:
+def detect_h264_encoder(prefer_software: bool = False) -> Optional[str]:
     """
-    Detect the best available H.264 hardware encoder for Raspberry Pi
+    Detect the best available H.264 encoder
+    
+    Args:
+        prefer_software: If True, prefer software encoding (x264enc)
     
     Returns:
         Name of the encoder element, or None if not found
     """
-    # Check for Raspberry Pi hardware encoders in order of preference
-    encoders = [
-        'v4l2h264enc',      # Raspberry Pi 4 hardware encoder
-        'omxh264enc',       # Raspberry Pi 3 hardware encoder (deprecated but still used)
-        'x264enc',          # Software fallback
-    ]
+    if prefer_software:
+        # Use software encoder directly
+        encoders = ['x264enc']
+    else:
+        # Check for Raspberry Pi hardware encoders in order of preference
+        # Note: v4l2h264enc has issues on some Pi 4 systems, so we offer software fallback
+        encoders = [
+            'v4l2h264enc',      # Raspberry Pi 4 hardware encoder (can be buggy)
+            'omxh264enc',       # Raspberry Pi 3 hardware encoder (deprecated but still used)
+            'x264enc',          # Software fallback (reliable but CPU intensive)
+        ]
     
     for encoder in encoders:
         if check_gst_element(encoder):
