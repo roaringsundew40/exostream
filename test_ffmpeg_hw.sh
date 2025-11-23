@@ -32,9 +32,9 @@ echo ""
 timeout 5 ffmpeg -f v4l2 -input_format mjpeg \
     -video_size 1280x720 -framerate 30 \
     -i /dev/video0 \
-    -c:v h264_v4l2m2m -b:v 4M -g 30 \
+    -c:v h264_v4l2m2m -b:v 4M -g 60 \
     -f h264 test_ffmpeg_hw.h264 \
-    -y 2>&1 | tail -20
+    -y 2>&1 | tail -30
 
 if [ $? -eq 0 ] && [ -f test_ffmpeg_hw.h264 ]; then
     SIZE=$(stat -f%z test_ffmpeg_hw.h264 2>/dev/null || stat -c%s test_ffmpeg_hw.h264 2>/dev/null)

@@ -76,14 +76,14 @@ class FFmpegEncoder:
         # Encoder-specific settings
         if self.use_hardware:
             # Hardware encoder (h264_v4l2m2m)
+            # Note: h264_v4l2m2m doesn't support all options that libx264 does
             cmd.extend([
                 "-c:v", "h264_v4l2m2m",
                 "-b:v", f"{self.video_config.bitrate}k",
-                "-maxrate", f"{self.video_config.bitrate}k",
-                "-bufsize", f"{self.video_config.bitrate * 2}k",
                 "-g", str(self.video_config.fps * 2),  # Keyframe every 2 seconds
-                "-bf", "0",  # No B-frames
-                "-profile:v", "baseline",
+                # Don't set profile - h264_v4l2m2m handles this automatically
+                # Don't set maxrate/bufsize - can cause issues with hardware encoder
+                # Don't set bf - hardware encoder decides this
             ])
         else:
             # Software encoder (libx264)
@@ -103,10 +103,11 @@ class FFmpegEncoder:
                 ),
             ])
         
-        # Output format
+        # Output format and optimization
         cmd.extend([
             "-f", "mpegts",  # MPEG-TS for SRT
-            "-flush_packets", "1",  # Low latency
+            "-muxdelay", "0",  # No muxing delay
+            "-muxpreload", "0",  # No preload
             srt_url
         ])
         
