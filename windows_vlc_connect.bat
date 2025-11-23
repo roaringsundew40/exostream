@@ -1,10 +1,6 @@
 @echo off
-REM Batch file to connect to ExoStream from Windows using VLC
-REM 
-REM Instructions:
-REM 1. Copy this file to your Windows computer
-REM 2. Edit the IP address below to match your Raspberry Pi
-REM 3. Double-click to run
+REM ExoStream VLC Connector for Windows
+REM Edit RPI_IP below to match your Raspberry Pi's IP address
 
 SET RPI_IP=192.168.86.30
 SET PORT=9000
@@ -15,30 +11,36 @@ echo ===================================
 echo.
 echo Connecting to: srt://%RPI_IP%:%PORT%
 echo.
-echo Make sure:
-echo  1. ExoStream is running on your Raspberry Pi
-echo  2. Your Pi's IP address is %RPI_IP%
-echo  3. VLC is installed in the default location
+
+REM Try to find VLC in common locations
+SET VLC_PATH=
+
+IF EXIST "C:\Program Files\VideoLAN\VLC\vlc.exe" (
+    SET VLC_PATH=C:\Program Files\VideoLAN\VLC\vlc.exe
+)
+
+IF EXIST "C:\Program Files (x86)\VideoLAN\VLC\vlc.exe" (
+    SET VLC_PATH=C:\Program Files ^(x86^)\VideoLAN\VLC\vlc.exe
+)
+
+IF "%VLC_PATH%"=="" (
+    echo ERROR: VLC not found in default locations!
+    echo Please install VLC from https://www.videolan.org/
+    echo Or edit this file and set VLC_PATH manually
+    pause
+    exit /b 1
+)
+
+echo Found VLC at: %VLC_PATH%
+echo Starting stream...
 echo.
-pause
 
-echo Starting VLC with optimized settings for low latency...
-echo.
-
-"C:\Program Files\VideoLAN\VLC\vlc.exe" ^
-    "srt://%RPI_IP%:%PORT%?latency=120" ^
-    --network-caching=100 ^
-    --live-caching=100 ^
-    --srt-streamid="" ^
-    --clock-jitter=0 ^
-    --clock-synchro=0 ^
-    --avcodec-hw=any
-
-REM If VLC is in 32-bit Program Files, try this instead:
-REM "C:\Program Files (x86)\VideoLAN\VLC\vlc.exe" ^
+REM Start VLC with simple settings
+start "" "%VLC_PATH%" srt://%RPI_IP%:%PORT% --network-caching=100
 
 echo.
-echo If VLC didn't open, it might be installed in a different location.
-echo Edit this batch file and update the path to vlc.exe
+echo VLC should open in a moment.
+echo If you see a black screen, wait 2-3 seconds for the stream to start.
+echo.
 pause
 

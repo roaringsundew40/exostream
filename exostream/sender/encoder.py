@@ -126,14 +126,15 @@ class StreamEncoder:
             elements['encoder'] = Gst.ElementFactory.make(self.encoder_name, "encoder")
             self._configure_encoder(elements['encoder'])
             
-            # H.264 parser - ensure proper stream format
+            # H.264 parser - CRITICAL for proper headers
             elements['h264parse'] = Gst.ElementFactory.make("h264parse", "h264parse")
-            elements['h264parse'].set_property("config-interval", 1)  # Send SPS/PPS with every IDR
+            # Insert SPS/PPS before EVERY IDR frame
+            elements['h264parse'].set_property("config-interval", -1)  # -1 = insert before every IDR
             
-            # Caps after h264parse to ensure proper format
+            # Caps after h264parse - ensure proper format
             elements['h264_caps'] = Gst.ElementFactory.make("capsfilter", "h264_caps")
             h264_caps = Gst.Caps.from_string(
-                "video/x-h264,stream-format=byte-stream,alignment=au"
+                "video/x-h264,stream-format=byte-stream,alignment=au,profile=baseline"
             )
             elements['h264_caps'].set_property("caps", h264_caps)
             
@@ -199,15 +200,20 @@ class StreamEncoder:
             encoder.set_property("control-rate", "variable")
         
         elif self.encoder_name == "x264enc":
-            # Software encoder fallback
+            # Software encoder - configure for proper streaming
             encoder.set_property("bitrate", self.video_config.bitrate)
-            encoder.set_property("speed-preset", "ultrafast")
+            encoder.set_property("speed-preset", "veryfast")  # veryfast is more stable than ultrafast
             encoder.set_property("tune", "zerolatency")
-            encoder.set_property("key-int-max", self.video_config.keyframe_interval)
-            encoder.set_property("byte-stream", True)  # Ensure byte-stream output
-            encoder.set_property("aud", False)  # No access unit delimiters
-            encoder.set_property("sliced-threads", False)  # Better for streaming
-            logger.info("Using software encoder (x264enc) - reliable but uses more CPU")
+            # Keyframe every 2 seconds for quick VLC startup
+            encoder.set_property("key-int-max", self.video_config.fps * 2)
+            # Critical: Force IDR frames (not just I-frames)
+            encoder.set_property("option-string", "keyint=%d:min-keyint=%d:scenecut=0" % (
+                self.video_config.fps * 2,
+                self.video_config.fps * 2
+            ))
+            encoder.set_property("bframes", 0)  # No B-frames for lower latency
+            encoder.set_property("threads", 2)  # Limit threads on Pi
+            logger.info("Using software encoder (x264enc) with streaming optimization")
     
     def _configure_srt_sink(self, srtsink: Gst.Element):
         """Configure the SRT sink element"""
