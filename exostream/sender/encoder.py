@@ -99,11 +99,11 @@ class StreamEncoder:
             # Videoscale in case we need to adjust resolution
             elements['videoscale'] = Gst.ElementFactory.make("videoscale", "videoscale")
             
-            # Caps filter for resolution only - let encoder negotiate format
+            # Caps filter - MUST force I420 format for v4l2h264enc
             elements['encoder_caps'] = Gst.ElementFactory.make("capsfilter", "encoder_caps")
-            # Don't specify format, let v4l2h264enc choose (it will pick I420 or NV12)
+            # v4l2h264enc on Pi only supports I420 or NV12, NOT YUY2
             encoder_caps = Gst.Caps.from_string(
-                f"video/x-raw,"
+                f"video/x-raw,format=I420,"
                 f"width={self.video_config.width},"
                 f"height={self.video_config.height}"
             )
