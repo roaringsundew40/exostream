@@ -181,6 +181,22 @@ hostname -I
 | medium | 1920x1080 | 30 | 4 Mbps | Balanced quality/bandwidth |
 | high | 1920x1080 | 30 | 6 Mbps | High quality, good network |
 
+## Known Issues
+
+### Hardware Encoder (v4l2h264enc) May Not Work
+The Raspberry Pi 4's v4l2h264enc driver is **buggy on many systems**. If hardware encoding fails:
+
+**Use software encoding instead:**
+```bash
+exostream send -s --resolution 1280x720 --fps 30 --bitrate 6000
+```
+
+This uses CPU instead of GPU but works reliably. See [PERFORMANCE_GUIDE.md](PERFORMANCE_GUIDE.md) for optimization tips.
+
+### Recommended Settings for Software Encoding
+- **Best:** 720p @ 30fps, 6000kbps bitrate (smooth, low latency)
+- **Alternative:** 1080p @ 20-24fps, 6000kbps (higher res, cinematic feel)
+
 ## Troubleshooting
 
 ### Installation: PyGObject/girepository-2.0 not found
