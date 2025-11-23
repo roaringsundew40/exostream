@@ -86,6 +86,7 @@ class StreamEncoder:
             # Source: v4l2src for webcam
             elements['source'] = Gst.ElementFactory.make("v4l2src", "source")
             elements['source'].set_property("device", self.device_path)
+            elements['source'].set_property("do-timestamp", True)  # Add timestamps for sync
             
             # Caps filter - allow both MJPEG and raw, camera will choose
             elements['capsfilter'] = Gst.ElementFactory.make("capsfilter", "capsfilter")
@@ -116,11 +117,12 @@ class StreamEncoder:
             )
             elements['encoder_caps'].set_property("caps", encoder_caps)
             
-            # Queue before encoder
+            # Queue before encoder - SMALL for low latency
             elements['queue1'] = Gst.ElementFactory.make("queue", "queue1")
-            elements['queue1'].set_property("max-size-buffers", 0)
+            elements['queue1'].set_property("max-size-buffers", 3)  # Only 3 frames
             elements['queue1'].set_property("max-size-time", 0)
             elements['queue1'].set_property("max-size-bytes", 0)
+            elements['queue1'].set_property("leaky", 2)  # Leak oldest buffers if full
             
             # H.264 encoder
             elements['encoder'] = Gst.ElementFactory.make(self.encoder_name, "encoder")
@@ -138,8 +140,12 @@ class StreamEncoder:
             )
             elements['video_caps'].set_property("caps", video_caps)
             
-            # Queue before sink
+            # Queue before sink - SMALL for low latency
             elements['queue2'] = Gst.ElementFactory.make("queue", "queue2")
+            elements['queue2'].set_property("max-size-buffers", 3)  # Only 3 frames
+            elements['queue2'].set_property("max-size-time", 0)
+            elements['queue2'].set_property("max-size-bytes", 0)
+            elements['queue2'].set_property("leaky", 2)  # Leak oldest buffers if full
             
             # SRT sink
             elements['srtsink'] = Gst.ElementFactory.make("srtsink", "srtsink")
@@ -195,20 +201,22 @@ class StreamEncoder:
             encoder.set_property("control-rate", "variable")
         
         elif self.encoder_name == "x264enc":
-            # Software encoder - configure for proper streaming
+            # Software encoder - LOW LATENCY configuration
             encoder.set_property("bitrate", self.video_config.bitrate)
-            encoder.set_property("speed-preset", "veryfast")  # veryfast is more stable than ultrafast
+            encoder.set_property("speed-preset", "ultrafast")  # Fastest for low latency
             encoder.set_property("tune", "zerolatency")
-            # Keyframe every 2 seconds for quick VLC startup
-            encoder.set_property("key-int-max", self.video_config.fps * 2)
-            # Critical: Force IDR frames (not just I-frames)
-            encoder.set_property("option-string", "keyint=%d:min-keyint=%d:scenecut=0" % (
-                self.video_config.fps * 2,
-                self.video_config.fps * 2
+            # Keyframe every 1 second for quick startup and recovery
+            encoder.set_property("key-int-max", self.video_config.fps)
+            # Critical: Force IDR frames with minimal buffering
+            encoder.set_property("option-string", "keyint=%d:min-keyint=%d:scenecut=0:bframes=0:rc-lookahead=0" % (
+                self.video_config.fps,
+                self.video_config.fps
             ))
-            encoder.set_property("bframes", 0)  # No B-frames for lower latency
+            encoder.set_property("bframes", 0)  # No B-frames
             encoder.set_property("threads", 2)  # Limit threads on Pi
-            logger.info("Using software encoder (x264enc) with streaming optimization")
+            encoder.set_property("sliced-threads", False)  # Better latency
+            encoder.set_property("sync-lookahead", 0)  # No lookahead for minimum latency
+            logger.info("Using software encoder (x264enc) - optimized for low latency")
     
     def _configure_srt_sink(self, srtsink: Gst.Element):
         """Configure the SRT sink element"""
@@ -219,11 +227,14 @@ class StreamEncoder:
         srtsink.set_property("uri", srt_uri)
         srtsink.set_property("mode", "listener")  # Act as server
         srtsink.set_property("wait-for-connection", False)  # Don't wait, stream immediately
+        srtsink.set_property("latency", self.srt_config.latency)  # SRT latency in ms
         
         # Optional: Set passphrase for encryption
         if self.srt_config.passphrase:
             srtsink.set_property("passphrase", self.srt_config.passphrase)
             logger.info("SRT encryption enabled")
+        
+        logger.info(f"SRT latency configured: {self.srt_config.latency}ms")
     
     def start(self):
         """Start the streaming pipeline"""

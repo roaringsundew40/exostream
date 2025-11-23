@@ -12,8 +12,8 @@ class VideoConfig:
     width: int = 1920
     height: int = 1080
     fps: int = 30
-    bitrate: int = 4000  # kbps
-    keyframe_interval: int = 60  # GOP size
+    bitrate: int = 6000  # kbps (increased for better quality with software encoder)
+    keyframe_interval: int = 30  # GOP size (1 second at 30fps)
     
     @property
     def resolution(self) -> str:
@@ -62,9 +62,9 @@ class StreamConfig:
     def from_preset(cls, preset: str = "medium"):
         """Load configuration from preset"""
         presets = {
-            "low": VideoConfig(width=1280, height=720, fps=25, bitrate=2000),
-            "medium": VideoConfig(width=1920, height=1080, fps=30, bitrate=4000),
-            "high": VideoConfig(width=1920, height=1080, fps=30, bitrate=6000),
+            "low": VideoConfig(width=1280, height=720, fps=25, bitrate=3000),
+            "medium": VideoConfig(width=1920, height=1080, fps=30, bitrate=6000),
+            "high": VideoConfig(width=1920, height=1080, fps=30, bitrate=8000),
         }
         
         if preset not in presets:
