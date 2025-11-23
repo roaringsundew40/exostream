@@ -18,8 +18,8 @@ setup(
     ],
     python_requires=">=3.8",
     install_requires=[
-        "PyGObject>=3.42.0",
-        "pycairo>=1.20.0",
+        # Note: PyGObject must be installed via system packages
+        # sudo apt-get install python3-gi python3-gi-cairo
         "rich>=13.0.0",
         "click>=8.0.0",
         "pyyaml>=6.0",

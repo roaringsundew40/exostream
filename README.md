@@ -27,16 +27,15 @@ Stream webcam from Raspberry Pi using GStreamer with hardware H.264 encoding and
 sudo apt-get update
 sudo apt-get install -y \
     python3-pip \
-    python3-gst-1.0 \
+    python3-gi \
+    python3-gi-cairo \
+    gir1.2-gstreamer-1.0 \
     gstreamer1.0-tools \
     gstreamer1.0-plugins-base \
     gstreamer1.0-plugins-good \
     gstreamer1.0-plugins-bad \
     gstreamer1.0-plugins-ugly \
-    gstreamer1.0-libav \
-    libgstreamer1.0-dev \
-    libcairo2-dev \
-    libgirepository1.0-dev
+    gstreamer1.0-libav
 ```
 
 ## Installation
@@ -54,8 +53,19 @@ cd exostream
 pip3 install -e .
 ```
 
+**Note:** If you're using a virtual environment, create it with system site packages:
+```bash
+python3 -m venv --system-site-packages venv
+source venv/bin/activate
+pip install -e .
+```
+
 3. Verify installation:
 ```bash
+# Check all dependencies
+python3 check_dependencies.py
+
+# Verify ExoStream command
 exostream --version
 ```
 
@@ -172,6 +182,28 @@ hostname -I
 | high | 1920x1080 | 30 | 6 Mbps | High quality, good network |
 
 ## Troubleshooting
+
+### Installation: PyGObject/girepository-2.0 not found
+If `pip install -e .` fails with an error about `girepository-2.0` or PyGObject:
+
+1. Make sure you installed the system packages first:
+```bash
+sudo apt-get install python3-gi python3-gi-cairo gir1.2-gstreamer-1.0
+```
+
+2. If using a virtual environment, recreate it with system packages:
+```bash
+deactivate  # if already in venv
+rm -rf venv
+python3 -m venv --system-site-packages venv
+source venv/bin/activate
+pip install -e .
+```
+
+3. Verify with the dependency checker:
+```bash
+python3 check_dependencies.py
+```
 
 ### No video devices found
 Make sure your webcam is connected and recognized:

@@ -80,7 +80,7 @@ class StreamEncoder:
             elements['source'] = Gst.ElementFactory.make("v4l2src", "source")
             elements['source'].set_property("device", self.device_path)
             
-            # Caps filter for video format
+            # Caps filter for video format from camera
             elements['capsfilter'] = Gst.ElementFactory.make("capsfilter", "capsfilter")
             caps = Gst.Caps.from_string(
                 f"video/x-raw,width={self.video_config.width},"
@@ -88,6 +88,14 @@ class StreamEncoder:
                 f"framerate={self.video_config.fps}/1"
             )
             elements['capsfilter'].set_property("caps", caps)
+            
+            # Video convert for format conversion
+            elements['videoconvert'] = Gst.ElementFactory.make("videoconvert", "videoconvert")
+            
+            # Caps filter for encoder input (v4l2h264enc needs I420 or NV12)
+            elements['encoder_caps'] = Gst.ElementFactory.make("capsfilter", "encoder_caps")
+            encoder_caps = Gst.Caps.from_string("video/x-raw,format=I420")
+            elements['encoder_caps'].set_property("caps", encoder_caps)
             
             # Queue before encoder
             elements['queue1'] = Gst.ElementFactory.make("queue", "queue1")
@@ -123,7 +131,9 @@ class StreamEncoder:
         # Link elements
         try:
             elements['source'].link(elements['capsfilter'])
-            elements['capsfilter'].link(elements['queue1'])
+            elements['capsfilter'].link(elements['videoconvert'])
+            elements['videoconvert'].link(elements['encoder_caps'])
+            elements['encoder_caps'].link(elements['queue1'])
             elements['queue1'].link(elements['encoder'])
             elements['encoder'].link(elements['h264parse'])
             elements['h264parse'].link(elements['muxer'])
@@ -225,7 +235,12 @@ class StreamEncoder:
         elif t == Gst.MessageType.ERROR:
             err, debug = message.parse_error()
             logger.error(f"Pipeline error: {err.message}")
-            logger.debug(f"Debug info: {debug}")
+            if debug:
+                logger.error(f"Debug info: {debug}")
+            
+            # Log the element that caused the error
+            if message.src:
+                logger.error(f"Error from element: {message.src.get_name()}")
             
             if self.on_error:
                 self.on_error(err.message)

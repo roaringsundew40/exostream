@@ -17,16 +17,15 @@ Make sure you have a Raspberry Pi 3 or 4 with:
 sudo apt-get update
 sudo apt-get install -y \
     python3-pip \
-    python3-gst-1.0 \
+    python3-gi \
+    python3-gi-cairo \
+    gir1.2-gstreamer-1.0 \
     gstreamer1.0-tools \
     gstreamer1.0-plugins-base \
     gstreamer1.0-plugins-good \
     gstreamer1.0-plugins-bad \
     gstreamer1.0-plugins-ugly \
-    gstreamer1.0-libav \
-    libgstreamer1.0-dev \
-    libcairo2-dev \
-    libgirepository1.0-dev
+    gstreamer1.0-libav
 ```
 
 ### 2. Install ExoStream
@@ -36,9 +35,21 @@ cd /path/to/exostream
 pip3 install -e .
 ```
 
+**Important:** If you're using a virtual environment, you need to give it access to system packages:
+```bash
+# Create venv with system packages access
+python3 -m venv --system-site-packages venv
+source venv/bin/activate
+pip install -e .
+```
+
 ### 3. Verify Installation
 
 ```bash
+# Check dependencies
+python3 check_dependencies.py
+
+# Check ExoStream
 exostream --version
 ```
 
