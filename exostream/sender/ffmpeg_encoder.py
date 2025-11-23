@@ -76,8 +76,9 @@ class FFmpegEncoder:
         # Encoder-specific settings
         if self.use_hardware:
             # Hardware encoder (h264_v4l2m2m)
-            # Note: h264_v4l2m2m doesn't support all options that libx264 does
+            # CRITICAL: Hardware encoder requires yuv420p pixel format
             cmd.extend([
+                "-pix_fmt", "yuv420p",  # Convert from yuvj422p (MJPEG) to yuv420p
                 "-c:v", "h264_v4l2m2m",
                 "-b:v", f"{self.video_config.bitrate}k",
                 "-g", str(self.video_config.fps * 2),  # Keyframe every 2 seconds

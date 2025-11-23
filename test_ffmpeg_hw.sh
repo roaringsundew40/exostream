@@ -32,6 +32,7 @@ echo ""
 timeout 5 ffmpeg -f v4l2 -input_format mjpeg \
     -video_size 1280x720 -framerate 30 \
     -i /dev/video0 \
+    -pix_fmt yuv420p \
     -c:v h264_v4l2m2m -b:v 4M -g 60 \
     -f h264 test_ffmpeg_hw.h264 \
     -y 2>&1 | tail -30
