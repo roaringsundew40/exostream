@@ -84,9 +84,9 @@ def main():
     parser = argparse.ArgumentParser(description='Test camera with GStreamer')
     parser.add_argument('--device', '-d', default='/dev/video0', 
                        help='Video device path')
-    parser.add_argument('--width', '-w', type=int, default=1920,
+    parser.add_argument('--width', type=int, default=1920,
                        help='Video width')
-    parser.add_argument('--height', '-h', type=int, default=1080,
+    parser.add_argument('--height', type=int, default=1080,
                        help='Video height')
     parser.add_argument('--fps', '-f', type=int, default=30,
                        help='Frames per second')
