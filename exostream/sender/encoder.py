@@ -99,10 +99,11 @@ class StreamEncoder:
             # Videoscale in case we need to adjust resolution
             elements['videoscale'] = Gst.ElementFactory.make("videoscale", "videoscale")
             
-            # Caps filter for encoder input (v4l2h264enc prefers NV12 on Pi 4)
+            # Caps filter for resolution only - let encoder negotiate format
             elements['encoder_caps'] = Gst.ElementFactory.make("capsfilter", "encoder_caps")
+            # Don't specify format, let v4l2h264enc choose (it will pick I420 or NV12)
             encoder_caps = Gst.Caps.from_string(
-                f"video/x-raw,format=NV12,"
+                f"video/x-raw,"
                 f"width={self.video_config.width},"
                 f"height={self.video_config.height}"
             )
@@ -163,25 +164,16 @@ class StreamEncoder:
         """Configure the H.264 encoder based on type"""
         if self.encoder_name == "v4l2h264enc":
             # Raspberry Pi 4 hardware encoder
-            # Set extra controls for bitrate and GOP
+            # Use minimal configuration for compatibility
             try:
-                encoder.set_property("extra-controls", 
-                    Gst.Structure.from_string(
-                        f"controls,video_bitrate={self.video_config.bitrate * 1000},"
-                        f"video_bitrate_mode=0,"  # 0 = VBR (variable bitrate)
-                        f"video_gop_size={self.video_config.keyframe_interval},"
-                        f"h264_profile=4,"  # 4 = High profile
-                        f"h264_level=11"  # Level 4.0
-                    )[0]
-                )
+                # Simple bitrate control only
+                controls = Gst.Structure.new_empty("controls")
+                controls.set_value("video_bitrate", self.video_config.bitrate * 1000)
+                encoder.set_property("extra-controls", controls)
+                logger.debug(f"Set encoder bitrate to {self.video_config.bitrate} kbps")
             except Exception as e:
-                logger.warning(f"Could not set all encoder controls: {e}")
-                # Try with minimal controls
-                encoder.set_property("extra-controls", 
-                    Gst.Structure.from_string(
-                        f"controls,video_bitrate={self.video_config.bitrate * 1000}"
-                    )[0]
-                )
+                logger.warning(f"Could not set encoder controls: {e}")
+                logger.warning("Encoder will use default settings")
         
         elif self.encoder_name == "omxh264enc":
             # Raspberry Pi 3 hardware encoder
