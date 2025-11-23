@@ -4,7 +4,9 @@ Stream webcam from Raspberry Pi using GStreamer with hardware H.264 encoding and
 
 ## Features
 
+- **Dual Backend Support** - Choose between GStreamer or FFmpeg
 - **Hardware H.264 Encoding** - Utilizes Raspberry Pi's hardware encoder for minimal CPU usage
+- **FFmpeg Integration** - Alternative hardware encoder (h264_v4l2m2m) that may work better on some systems
 - **SRT Streaming** - Reliable streaming with low latency over local network or internet
 - **Listener Mode** - Raspberry Pi acts as a server, clients connect to it
 - **Encryption Support** - Optional SRT passphrase encryption
@@ -73,7 +75,18 @@ exostream --version
 
 ### Starting the Stream (Raspberry Pi)
 
-#### Basic Usage
+#### Try FFmpeg Hardware Encoding First (NEW!)
+```bash
+# Test if FFmpeg hardware encoder works
+bash test_ffmpeg_hw.sh
+
+# If test passes, use FFmpeg with hardware encoding
+exostream send --use-ffmpeg
+```
+
+FFmpeg's h264_v4l2m2m encoder often works when GStreamer's doesn't! See [FFMPEG_GUIDE.md](FFMPEG_GUIDE.md) for details.
+
+#### Basic Usage (GStreamer)
 ```bash
 exostream send
 ```
@@ -82,7 +95,7 @@ This will start streaming with default settings:
 - Device: `/dev/video0`
 - Resolution: 1920x1080
 - FPS: 30
-- Bitrate: 4000 kbps
+- Bitrate: 6000 kbps
 - Port: 9000
 
 #### List Available Cameras
@@ -170,6 +183,9 @@ hostname -I
 | `--bitrate` | `-b` | `4000` | Video bitrate in kbps |
 | `--preset` | | | Quality preset (low/medium/high) |
 | `--passphrase` | | | SRT encryption passphrase |
+| `--software-encoder` | `-s` | | Use GStreamer software encoder (x264enc) |
+| `--use-ffmpeg` | | | Use FFmpeg with hardware encoder (h264_v4l2m2m) |
+| `--ffmpeg-software` | | | Use FFmpeg with software encoder (libx264) |
 | `--list-devices` | `-l` | | List available devices and exit |
 | `--verbose` | `-v` | | Enable verbose logging |
 
