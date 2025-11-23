@@ -80,21 +80,32 @@ class StreamEncoder:
             elements['source'] = Gst.ElementFactory.make("v4l2src", "source")
             elements['source'].set_property("device", self.device_path)
             
-            # Caps filter for video format from camera
+            # Caps filter - allow both MJPEG and raw, camera will choose
             elements['capsfilter'] = Gst.ElementFactory.make("capsfilter", "capsfilter")
+            # Try MJPEG first (what C930e provides at 1080p), then raw as fallback
             caps = Gst.Caps.from_string(
-                f"video/x-raw,width={self.video_config.width},"
+                f"image/jpeg,width={self.video_config.width},"
                 f"height={self.video_config.height},"
                 f"framerate={self.video_config.fps}/1"
             )
             elements['capsfilter'].set_property("caps", caps)
             
+            # JPEG decoder (for MJPEG cameras like Logitech C930e)
+            elements['jpegdec'] = Gst.ElementFactory.make("jpegdec", "jpegdec")
+            
             # Video convert for format conversion
             elements['videoconvert'] = Gst.ElementFactory.make("videoconvert", "videoconvert")
             
-            # Caps filter for encoder input (v4l2h264enc needs I420 or NV12)
+            # Videoscale in case we need to adjust resolution
+            elements['videoscale'] = Gst.ElementFactory.make("videoscale", "videoscale")
+            
+            # Caps filter for encoder input (v4l2h264enc needs I420)
             elements['encoder_caps'] = Gst.ElementFactory.make("capsfilter", "encoder_caps")
-            encoder_caps = Gst.Caps.from_string("video/x-raw,format=I420")
+            encoder_caps = Gst.Caps.from_string(
+                f"video/x-raw,format=I420,"
+                f"width={self.video_config.width},"
+                f"height={self.video_config.height}"
+            )
             elements['encoder_caps'].set_property("caps", encoder_caps)
             
             # Queue before encoder
@@ -131,8 +142,10 @@ class StreamEncoder:
         # Link elements
         try:
             elements['source'].link(elements['capsfilter'])
-            elements['capsfilter'].link(elements['videoconvert'])
-            elements['videoconvert'].link(elements['encoder_caps'])
+            elements['capsfilter'].link(elements['jpegdec'])
+            elements['jpegdec'].link(elements['videoconvert'])
+            elements['videoconvert'].link(elements['videoscale'])
+            elements['videoscale'].link(elements['encoder_caps'])
             elements['encoder_caps'].link(elements['queue1'])
             elements['queue1'].link(elements['encoder'])
             elements['encoder'].link(elements['h264parse'])

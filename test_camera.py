@@ -15,10 +15,12 @@ def test_camera_with_gst(device_path, width=1920, height=1080, fps=30):
         
         print(f"\n=== Testing {device_path} with GStreamer ===\n")
         
-        # Create a simple test pipeline: v4l2src ! videoconvert ! autovideosink
+        # Create a simple test pipeline: v4l2src ! jpegdec ! videoconvert ! fakesink
+        # Try MJPEG format first (what Logitech cameras use at high res)
         pipeline_str = (
             f"v4l2src device={device_path} ! "
-            f"video/x-raw,width={width},height={height},framerate={fps}/1 ! "
+            f"image/jpeg,width={width},height={height},framerate={fps}/1 ! "
+            f"jpegdec ! "
             f"videoconvert ! "
             f"fpsdisplaysink video-sink=fakesink text-overlay=false"
         )
