@@ -201,22 +201,22 @@ class StreamEncoder:
             encoder.set_property("control-rate", "variable")
         
         elif self.encoder_name == "x264enc":
-            # Software encoder - LOW LATENCY configuration
+            # Software encoder - BALANCED quality and latency
             encoder.set_property("bitrate", self.video_config.bitrate)
-            encoder.set_property("speed-preset", "ultrafast")  # Fastest for low latency
+            encoder.set_property("speed-preset", "veryfast")  # Better quality than ultrafast
             encoder.set_property("tune", "zerolatency")
-            # Keyframe every 1 second for quick startup and recovery
-            encoder.set_property("key-int-max", self.video_config.fps)
-            # Critical: Force IDR frames with minimal buffering
-            encoder.set_property("option-string", "keyint=%d:min-keyint=%d:scenecut=0:bframes=0:rc-lookahead=0" % (
-                self.video_config.fps,
+            # Keyframe every 2 seconds
+            encoder.set_property("key-int-max", self.video_config.fps * 2)
+            # Quality-focused options
+            encoder.set_property("option-string", "keyint=%d:min-keyint=%d:scenecut=0:bframes=0:aq-mode=1:qpmin=10:qpmax=51" % (
+                self.video_config.fps * 2,
                 self.video_config.fps
             ))
             encoder.set_property("bframes", 0)  # No B-frames
-            encoder.set_property("threads", 2)  # Limit threads on Pi
-            encoder.set_property("sliced-threads", False)  # Better latency
-            encoder.set_property("sync-lookahead", 0)  # No lookahead for minimum latency
-            logger.info("Using software encoder (x264enc) - optimized for low latency")
+            encoder.set_property("threads", 4)  # Use all cores
+            encoder.set_property("pass", 5)  # Constant bitrate
+            encoder.set_property("quantizer", 23)  # CRF-like quality (lower = better, 18-28 range)
+            logger.info("Using software encoder (x264enc) - balanced quality/latency")
     
     def _configure_srt_sink(self, srtsink: Gst.Element):
         """Configure the SRT sink element"""
