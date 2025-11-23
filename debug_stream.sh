@@ -31,10 +31,10 @@ echo ""
 echo "4. Testing local stream reception (5 seconds)..."
 echo "   This will try to receive the stream using gst-launch..."
 timeout 5 gst-launch-1.0 \
-    srcsrc uri=srt://127.0.0.1:9000 ! \
+    srtsrc uri=srt://127.0.0.1:9000 ! \
     tsdemux ! \
     h264parse ! \
-    fakesink 2>&1 | grep -E "(Setting pipeline|ERROR|WARNING)" || echo "No errors detected"
+    fakesink 2>&1 | head -20
 
 echo ""
 echo "=== Debug Complete ==="
