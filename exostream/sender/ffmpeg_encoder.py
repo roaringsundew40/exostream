@@ -105,10 +105,9 @@ class FFmpegEncoder:
             ])
         
         # Output format and optimization
+        # Try raw H.264 first - sometimes works better with SRT
         cmd.extend([
-            "-f", "mpegts",  # MPEG-TS for SRT
-            "-muxdelay", "0",  # No muxing delay
-            "-muxpreload", "0",  # No preload
+            "-f", "h264",  # Raw H.264 stream
             srt_url
         ])
         
@@ -133,6 +132,7 @@ class FFmpegEncoder:
             
             logger.info(f"FFmpeg encoder started (PID: {self.process.pid})")
             logger.info(f"Stream is available at: srt://0.0.0.0:{self.srt_config.port}")
+            logger.info(f"Full command: {' '.join(cmd)}")
             
             # Monitor stderr in real-time
             try:
