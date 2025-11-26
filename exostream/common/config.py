@@ -29,7 +29,7 @@ class VideoConfig:
 @dataclass
 class NDIConfig:
     """NDI streaming configuration"""
-    stream_name: str = "ExoStream"
+    stream_name: str = "Exostream"
     groups: Optional[str] = None  # NDI groups (comma-separated)
     clock_video: bool = True  # Use video clock for timing
     clock_audio: bool = False  # Use audio clock for timing
@@ -43,7 +43,7 @@ class StreamConfig:
     device: str = "/dev/video0"
     
     @classmethod
-    def from_preset(cls, preset: str = "medium", stream_name: str = "ExoStream"):
+    def from_preset(cls, preset: str = "medium", stream_name: str = "Exostream"):
         """Load configuration from preset"""
         presets = {
             "low": VideoConfig(width=1280, height=720, fps=25, bitrate=3000),

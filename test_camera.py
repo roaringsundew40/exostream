@@ -97,7 +97,7 @@ def main():
     
     args = parser.parse_args()
     
-    print("=== ExoStream Camera Test ===\n")
+    print("=== Exostream Camera Test ===\n")
     
     # Detect cameras
     print("Detecting video devices...")

@@ -1,4 +1,4 @@
-"""Main CLI entry point for ExoStream"""
+"""Main CLI entry point for Exostream"""
 
 import click
 from exostream.sender.cli import send
@@ -7,7 +7,7 @@ from exostream.sender.cli import send
 @click.group()
 @click.version_option(version="0.2.0")
 def main():
-    """ExoStream - Stream webcam from Raspberry Pi using NDI"""
+    """Exostream - Stream webcam from Raspberry Pi using NDI"""
     pass
 
 

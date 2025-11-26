@@ -65,7 +65,7 @@ def check_ffmpeg_ndi():
         return False
 
 def main():
-    print("=== ExoStream NDI Dependency Check ===\n")
+    print("=== Exostream NDI Dependency Check ===\n")
     
     all_ok = True
     

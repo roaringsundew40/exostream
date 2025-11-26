@@ -18,13 +18,13 @@ console = Console()
 
 @click.group()
 def cli():
-    """ExoStream - Stream webcam from Raspberry Pi using NDI"""
+    """Exostream - Stream webcam from Raspberry Pi using NDI"""
     pass
 
 
 @cli.command()
 @click.option('--device', '-d', default='/dev/video0', help='Video device path')
-@click.option('--stream-name', '-n', default='Exostream', help='NDI stream name')
+@click.option('--name', '-n', default='exostream', help='NDI stream name')
 @click.option('--groups', '-g', default=None, help='NDI groups (comma-separated)')
 @click.option('--resolution', '-r', default='1920x1080', help='Video resolution (e.g., 1920x1080)')
 @click.option('--fps', '-f', default=30, type=int, help='Frames per second')
@@ -42,7 +42,7 @@ def send(device, stream_name, groups, resolution, fps, preset, raw_input, list_d
     
     # Display banner
     console.print(Panel.fit(
-        "[bold cyan]ExoStream Sender[/bold cyan]\n"
+        "[bold cyan]Exostream Sender[/bold cyan]\n"
         "[dim]Streaming webcam over NDI[/dim]",
         border_style="cyan"
     ))

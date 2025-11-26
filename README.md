@@ -1,4 +1,4 @@
-# ExoStream
+# Exostream
 
 Stream webcam from Raspberry Pi using GStreamer with hardware H.264 encoding and SRT (Secure Reliable Transport) protocol.
 
@@ -67,7 +67,7 @@ pip install -e .
 # Check all dependencies
 python3 check_dependencies.py
 
-# Verify ExoStream command
+# Verify Exostream command
 exostream --version
 ```
 
