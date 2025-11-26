@@ -49,7 +49,7 @@ class FFmpegEncoder:
         logger.info(f"Using FFmpeg with NDI output (raw frames)")
         logger.info(f"NDI will handle compression internally")
         if use_raw_input:
-            logger.info(f"Using raw YUYV input (lower CPU usage)")
+            logger.info(f"Using raw YUYV input")
     
     def build_command(self) -> list:
         """
@@ -127,7 +127,7 @@ class FFmpegEncoder:
             cmd.extend(["-clock_audio", "true"])
         
         # NDI output URL
-        output_url = f"libndi_newtek:{self.ndi_config.stream_name}"
+        output_url = f"{self.ndi_config.stream_name}"
         cmd.append(output_url)
         
         return cmd

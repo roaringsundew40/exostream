@@ -24,7 +24,7 @@ def cli():
 
 @cli.command()
 @click.option('--device', '-d', default='/dev/video0', help='Video device path')
-@click.option('--stream-name', '-n', default='ExoStream', help='NDI stream name')
+@click.option('--stream-name', '-n', default='Exostream', help='NDI stream name')
 @click.option('--groups', '-g', default=None, help='NDI groups (comma-separated)')
 @click.option('--resolution', '-r', default='1920x1080', help='Video resolution (e.g., 1920x1080)')
 @click.option('--fps', '-f', default=30, type=int, help='Frames per second')
@@ -33,13 +33,7 @@ def cli():
 @click.option('--list-devices', '-l', is_flag=True, help='List available video devices and exit')
 @click.option('--verbose', '-v', is_flag=True, help='Verbose logging')
 def send(device, stream_name, groups, resolution, fps, preset, raw_input, list_devices, verbose):
-    """Start streaming from webcam via NDI (NDI handles compression internally)
-    
-    Performance Tips:
-    - For less stuttering, try lower resolution: --resolution 1280x720
-    - Or lower framerate: --fps 25
-    - 1080p30 works well on Pi 4, but may stutter on older hardware
-    """
+    """Start streaming from webcam via NDI (NDI handles compression internally)"""
     
     # Setup logger
     log_level = "DEBUG" if verbose else "INFO"
@@ -120,8 +114,7 @@ def send(device, stream_name, groups, resolution, fps, preset, raw_input, list_d
             perf_msg += "⚠ Raw YUYV at 1080p30 may not work (USB bandwidth limit)\n"
             perf_msg += "Remove --raw-input flag for 1080p, or use --resolution 1280x720[/dim]"
         else:
-            perf_msg += "If stuttering occurs, reduce resolution: --resolution 1280x720\n"
-            perf_msg += "Or lower framerate: --fps 25[/dim]"
+            perf_msg += "If stuttering occurs, reduce resolution: --resolution 1280x720[/dim]"
         console.print(perf_msg)
     
     console.print("\n[yellow]Starting stream...[/yellow]")
