@@ -8,10 +8,9 @@ from rich.panel import Panel
 from rich import box
 
 from exostream.common.logger import setup_logger, get_logger
-from exostream.common.config import StreamConfig, VideoConfig, SRTConfig
-from exostream.common.network import is_port_available, get_local_ip
+from exostream.common.config import StreamConfig, VideoConfig, NDIConfig
+from exostream.common.network import get_local_ip
 from exostream.sender.webcam import WebcamManager
-from exostream.sender.encoder import StreamEncoder
 from exostream.sender.ffmpeg_encoder import FFmpegEncoder
 
 console = Console()
@@ -19,26 +18,23 @@ console = Console()
 
 @click.group()
 def cli():
-    """ExoStream - Stream webcam from Raspberry Pi using GStreamer and SRT"""
+    """ExoStream - Stream webcam from Raspberry Pi using NDI"""
     pass
 
 
 @cli.command()
 @click.option('--device', '-d', default='/dev/video0', help='Video device path')
-@click.option('--port', '-p', default=9000, type=int, help='SRT port to listen on')
+@click.option('--stream-name', '-n', default='ExoStream', help='NDI stream name')
+@click.option('--groups', '-g', default=None, help='NDI groups (comma-separated)')
 @click.option('--resolution', '-r', default='1920x1080', help='Video resolution (e.g., 1920x1080)')
 @click.option('--fps', '-f', default=30, type=int, help='Frames per second')
 @click.option('--bitrate', '-b', default=4000, type=int, help='Video bitrate in kbps')
 @click.option('--preset', default=None, help='Quality preset (low, medium, high)')
-@click.option('--passphrase', default=None, help='SRT encryption passphrase')
-@click.option('--software-encoder', '-s', is_flag=True, help='Use software encoder (GStreamer x264enc)')
-@click.option('--use-ffmpeg', is_flag=True, help='Use FFmpeg instead of GStreamer (try hardware encoder first)')
-@click.option('--ffmpeg-software', is_flag=True, help='Use FFmpeg with software encoder')
-@click.option('--udp', is_flag=True, help='Use UDP instead of SRT (lower latency, recommended for local network)')
+@click.option('--software-encoder', '-s', is_flag=True, help='Use software encoder (libx264)')
 @click.option('--list-devices', '-l', is_flag=True, help='List available video devices and exit')
 @click.option('--verbose', '-v', is_flag=True, help='Verbose logging')
-def send(device, port, resolution, fps, bitrate, preset, passphrase, software_encoder, use_ffmpeg, ffmpeg_software, udp, list_devices, verbose):
-    """Start streaming from webcam"""
+def send(device, stream_name, groups, resolution, fps, bitrate, preset, software_encoder, list_devices, verbose):
+    """Start streaming from webcam via NDI"""
     
     # Setup logger
     log_level = "DEBUG" if verbose else "INFO"
@@ -48,7 +44,7 @@ def send(device, port, resolution, fps, bitrate, preset, passphrase, software_en
     # Display banner
     console.print(Panel.fit(
         "[bold cyan]ExoStream Sender[/bold cyan]\n"
-        "[dim]Streaming webcam over SRT[/dim]",
+        "[dim]Streaming webcam over NDI[/dim]",
         border_style="cyan"
     ))
     
@@ -77,30 +73,26 @@ def send(device, port, resolution, fps, bitrate, preset, passphrase, software_en
     
     console.print(f"[green]✓ Using device: {selected_device.name} ({device})[/green]")
     
-    # Check port availability
-    if not is_port_available(port):
-        console.print(f"[red]✗ Port {port} is already in use![/red]")
-        sys.exit(1)
-    
     # Create configuration
     try:
         if preset:
-            config = StreamConfig.from_preset(preset)
+            config = StreamConfig.from_preset(preset, stream_name=stream_name)
             config.device = device
-            config.srt.port = port
+            if groups:
+                config.ndi.groups = groups
         else:
             video_config = VideoConfig.from_resolution_string(
                 resolution,
                 fps=fps,
                 bitrate=bitrate
             )
-            srt_config = SRTConfig(
-                port=port,
-                passphrase=passphrase
+            ndi_config = NDIConfig(
+                stream_name=stream_name,
+                groups=groups
             )
             config = StreamConfig(
                 video=video_config,
-                srt=srt_config,
+                ndi=ndi_config,
                 device=device
             )
     except Exception as e:
@@ -110,38 +102,26 @@ def send(device, port, resolution, fps, bitrate, preset, passphrase, software_en
     # Display configuration
     display_stream_config(config)
     
-    # Get local IP for display
-    local_ip = get_local_ip()
-    if local_ip:
-        console.print(f"\n[bold green]Stream is available at:[/bold green]")
-        console.print(f"  srt://{local_ip}:{port}")
-        if passphrase:
-            console.print(f"  [dim]Passphrase: {passphrase}[/dim]")
+    # Display NDI stream information
+    console.print(f"\n[bold green]NDI Stream Information:[/bold green]")
+    console.print(f"  Stream Name: [yellow]{config.ndi.stream_name}[/yellow]")
+    if config.ndi.groups:
+        console.print(f"  Groups: [yellow]{config.ndi.groups}[/yellow]")
+    console.print(f"  [dim]Discoverable on local network via NDI[/dim]")
     
     console.print("\n[yellow]Starting stream...[/yellow]")
     console.print("[dim]Press Ctrl+C to stop[/dim]\n")
     
     # Create and start encoder
     try:
-        if use_ffmpeg or ffmpeg_software or udp:
-            # Use FFmpeg encoder
-            encoder = FFmpegEncoder(
-                device_path=device,
-                video_config=config.video,
-                srt_config=config.srt,
-                on_error=lambda msg: console.print(f"[red]Error: {msg}[/red]"),
-                use_hardware=not ffmpeg_software,  # Hardware unless --ffmpeg-software
-                use_udp=udp  # Use UDP if requested
-            )
-        else:
-            # Use GStreamer encoder
-            encoder = StreamEncoder(
-                device_path=device,
-                video_config=config.video,
-                srt_config=config.srt,
-                on_error=lambda msg: console.print(f"[red]Error: {msg}[/red]"),
-                use_software_encoder=software_encoder
-            )
+        # Use FFmpeg encoder with NDI
+        encoder = FFmpegEncoder(
+            device_path=device,
+            video_config=config.video,
+            ndi_config=config.ndi,
+            on_error=lambda msg: console.print(f"[red]Error: {msg}[/red]"),
+            use_hardware=not software_encoder
+        )
         
         encoder.start()
         
@@ -174,12 +154,13 @@ def display_stream_config(config: StreamConfig):
     table.add_column("Setting", style="cyan")
     table.add_column("Value", style="yellow")
     
+    table.add_row("Protocol", "NDI")
     table.add_row("Resolution", config.video.resolution)
     table.add_row("FPS", str(config.video.fps))
     table.add_row("Bitrate", f"{config.video.bitrate} kbps")
-    table.add_row("SRT Port", str(config.srt.port))
-    table.add_row("SRT Latency", f"{config.srt.latency} ms")
-    table.add_row("Encryption", "Enabled" if config.srt.passphrase else "Disabled")
+    table.add_row("Stream Name", config.ndi.stream_name)
+    if config.ndi.groups:
+        table.add_row("Groups", config.ndi.groups)
     
     console.print(table)
 

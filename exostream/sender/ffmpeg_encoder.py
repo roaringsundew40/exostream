@@ -1,4 +1,4 @@
-"""FFmpeg-based encoder for hardware H.264 encoding"""
+"""FFmpeg-based encoder for NDI streaming"""
 
 import subprocess
 import signal
@@ -6,71 +6,55 @@ import sys
 import shlex
 from typing import Optional, Callable
 from exostream.common.logger import get_logger
-from exostream.common.config import VideoConfig, SRTConfig
+from exostream.common.config import VideoConfig, NDIConfig
 
 logger = get_logger(__name__)
 
 
 class FFmpegEncoder:
-    """Handles video encoding using FFmpeg with hardware acceleration"""
+    """Handles video encoding using FFmpeg with NDI output"""
     
     def __init__(
         self,
         device_path: str,
         video_config: VideoConfig,
-        srt_config: SRTConfig,
+        ndi_config: NDIConfig,
         on_error: Optional[Callable] = None,
-        use_hardware: bool = True,
-        use_udp: bool = False
+        use_hardware: bool = True
     ):
         """
-        Initialize the FFmpeg encoder
+        Initialize the FFmpeg encoder for NDI output
         
         Args:
             device_path: Path to video device (e.g., /dev/video0)
             video_config: Video encoding configuration
-            srt_config: SRT streaming configuration (port used for UDP too)
+            ndi_config: NDI streaming configuration
             on_error: Callback function for errors
             use_hardware: Use h264_v4l2m2m hardware encoder
-            use_udp: Use UDP instead of SRT (lower latency)
         """
         self.device_path = device_path
         self.video_config = video_config
-        self.srt_config = srt_config
+        self.ndi_config = ndi_config
         self.on_error = on_error
         self.use_hardware = use_hardware
-        self.use_udp = use_udp
         
         self.process: Optional[subprocess.Popen] = None
         
         # Determine encoder
         self.encoder = "h264_v4l2m2m" if use_hardware else "libx264"
         
-        protocol = "UDP" if use_udp else "SRT"
         if use_hardware:
-            logger.info(f"Using FFmpeg with hardware encoder (h264_v4l2m2m) over {protocol}")
+            logger.info(f"Using FFmpeg with hardware encoder (h264_v4l2m2m) for NDI")
         else:
-            logger.info(f"Using FFmpeg with software encoder (libx264) over {protocol}")
+            logger.info(f"Using FFmpeg with software encoder (libx264) for NDI")
     
     def build_command(self) -> list:
         """
-        Build the FFmpeg command
+        Build the FFmpeg command for NDI output
         
         Returns:
             List of command arguments
         """
-        # Build output URL based on protocol
-        if self.use_udp:
-            # UDP multicast or unicast
-            output_url = f"udp://0.0.0.0:{self.srt_config.port}"
-        else:
-            # SRT URL for listener mode - use simpler syntax
-            # Latency in microseconds (120ms = 120000µs)
-            output_url = f"srt://:{self.srt_config.port}?mode=listener&latency={self.srt_config.latency * 1000}"
-            
-            if self.srt_config.passphrase:
-                output_url += f"&passphrase={self.srt_config.passphrase}"
-        
         cmd = [
             "ffmpeg",
             "-hide_banner",
@@ -87,15 +71,11 @@ class FFmpegEncoder:
         # Encoder-specific settings
         if self.use_hardware:
             # Hardware encoder (h264_v4l2m2m)
-            # CRITICAL: Hardware encoder requires yuv420p pixel format
             cmd.extend([
                 "-pix_fmt", "yuv420p",  # Convert from yuvj422p (MJPEG) to yuv420p
                 "-c:v", "h264_v4l2m2m",
                 "-b:v", f"{self.video_config.bitrate}k",
                 "-g", str(self.video_config.fps * 2),  # Keyframe every 2 seconds
-                # Don't set profile - h264_v4l2m2m handles this automatically
-                # Don't set maxrate/bufsize - can cause issues with hardware encoder
-                # Don't set bf - hardware encoder decides this
             ])
         else:
             # Software encoder (libx264)
@@ -115,12 +95,26 @@ class FFmpegEncoder:
                 ),
             ])
         
-        # Output format - MPEG-TS is standard for streaming
+        # NDI output configuration
+        # NDI prefers uyvy422 but can handle other formats
         cmd.extend([
-            "-f", "mpegts",  # MPEG-TS container
-            "-mpegts_flags", "latm",  # Low latency
-            output_url
+            "-pix_fmt", "uyvy422",  # NDI preferred pixel format
+            "-f", "libndi_newtek",  # NDI output format
         ])
+        
+        # Add NDI-specific options
+        if self.ndi_config.groups:
+            cmd.extend(["-groups", self.ndi_config.groups])
+        
+        if self.ndi_config.clock_video:
+            cmd.extend(["-clock_video", "true"])
+        
+        if self.ndi_config.clock_audio:
+            cmd.extend(["-clock_audio", "true"])
+        
+        # NDI output URL
+        output_url = f"libndi_newtek:{self.ndi_config.stream_name}"
+        cmd.append(output_url)
         
         return cmd
     
@@ -142,7 +136,9 @@ class FFmpegEncoder:
             )
             
             logger.info(f"FFmpeg encoder started (PID: {self.process.pid})")
-            logger.info(f"Stream is available at: srt://0.0.0.0:{self.srt_config.port}")
+            logger.info(f"NDI stream name: {self.ndi_config.stream_name}")
+            if self.ndi_config.groups:
+                logger.info(f"NDI groups: {self.ndi_config.groups}")
             logger.info(f"Full command: {' '.join(cmd)}")
             
             # Monitor stderr in real-time

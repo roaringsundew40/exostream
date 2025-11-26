@@ -27,39 +27,23 @@ class VideoConfig:
 
 
 @dataclass
-class SRTConfig:
-    """SRT streaming configuration"""
-    port: int = 9000
-    latency: int = 120  # milliseconds
-    passphrase: Optional[str] = None
-    mode: str = "listener"  # listener or caller
-    
-    def get_uri(self, host: Optional[str] = None) -> str:
-        """Generate SRT URI"""
-        if self.mode == "listener":
-            uri = f"srt://:{self.port}"
-        else:
-            if not host:
-                raise ValueError("Host is required for caller mode")
-            uri = f"srt://{host}:{self.port}"
-        
-        # Add parameters
-        params = [f"latency={self.latency}"]
-        if self.passphrase:
-            params.append(f"passphrase={self.passphrase}")
-        
-        return f"{uri}?{'&'.join(params)}"
+class NDIConfig:
+    """NDI streaming configuration"""
+    stream_name: str = "ExoStream"
+    groups: Optional[str] = None  # NDI groups (comma-separated)
+    clock_video: bool = True  # Use video clock for timing
+    clock_audio: bool = False  # Use audio clock for timing
 
 
 @dataclass
 class StreamConfig:
     """Complete streaming configuration"""
     video: VideoConfig
-    srt: SRTConfig
+    ndi: NDIConfig
     device: str = "/dev/video0"
     
     @classmethod
-    def from_preset(cls, preset: str = "medium"):
+    def from_preset(cls, preset: str = "medium", stream_name: str = "ExoStream"):
         """Load configuration from preset"""
         presets = {
             "low": VideoConfig(width=1280, height=720, fps=25, bitrate=3000),
@@ -72,7 +56,7 @@ class StreamConfig:
         
         return cls(
             video=presets[preset],
-            srt=SRTConfig()
+            ndi=NDIConfig(stream_name=stream_name)
         )
     
     def save_to_file(self, filepath: Path):
@@ -85,10 +69,11 @@ class StreamConfig:
                 'bitrate': self.video.bitrate,
                 'keyframe_interval': self.video.keyframe_interval,
             },
-            'srt': {
-                'port': self.srt.port,
-                'latency': self.srt.latency,
-                'mode': self.srt.mode,
+            'ndi': {
+                'stream_name': self.ndi.stream_name,
+                'groups': self.ndi.groups,
+                'clock_video': self.ndi.clock_video,
+                'clock_audio': self.ndi.clock_audio,
             },
             'device': self.device,
         }
@@ -103,11 +88,11 @@ class StreamConfig:
             config_dict = yaml.safe_load(f)
         
         video = VideoConfig(**config_dict['video'])
-        srt = SRTConfig(**config_dict['srt'])
+        ndi = NDIConfig(**config_dict['ndi'])
         
         return cls(
             video=video,
-            srt=srt,
+            ndi=ndi,
             device=config_dict.get('device', '/dev/video0')
         )
 

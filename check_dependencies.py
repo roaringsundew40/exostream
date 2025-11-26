@@ -44,51 +44,61 @@ def check_gst_plugin(plugin_name):
         print(f"✗ gst-inspect-1.0 not found")
         return False
 
+def check_ffmpeg_ndi():
+    """Check if FFmpeg has NDI support"""
+    try:
+        result = subprocess.run(
+            ["ffmpeg", "-formats"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True
+        )
+        if "libndi_newtek" in result.stdout:
+            print("✓ FFmpeg has NDI support (libndi_newtek)")
+            return True
+        else:
+            print("✗ FFmpeg does NOT have NDI support")
+            print("  You need FFmpeg compiled with --enable-libndi_newtek")
+            return False
+    except FileNotFoundError:
+        print("✗ FFmpeg not found")
+        return False
+
 def main():
-    print("=== ExoStream Dependency Check ===\n")
+    print("=== ExoStream NDI Dependency Check ===\n")
     
     all_ok = True
     
     print("Python Modules:")
-    all_ok &= check_import("gi", "PyGObject (python3-gi)")
-    all_ok &= check_import("cairo", "pycairo (python3-gi-cairo)")
     all_ok &= check_import("rich")
     all_ok &= check_import("click")
     all_ok &= check_import("yaml", "pyyaml")
     all_ok &= check_import("psutil")
     
-    print("\nGStreamer:")
-    all_ok &= check_command("gst-launch-1.0")
-    all_ok &= check_command("gst-inspect-1.0")
+    print("\nFFmpeg:")
+    ffmpeg_ok = check_command("ffmpeg")
+    all_ok &= ffmpeg_ok
     
-    print("\nGStreamer Plugins:")
-    all_ok &= check_gst_plugin("v4l2src")
-    all_ok &= check_gst_plugin("srtsink")
-    all_ok &= check_gst_plugin("srtsrc")
-    
-    # Check for hardware encoders
-    print("\nHardware Encoders:")
-    has_v4l2 = check_gst_plugin("v4l2h264enc")  # Pi 4
-    has_omx = check_gst_plugin("omxh264enc")     # Pi 3
-    
-    if not (has_v4l2 or has_omx):
-        print("⚠ No hardware H.264 encoder found! Software encoding will be used.")
-        all_ok = False
+    if ffmpeg_ok:
+        print("\nNDI Support:")
+        ndi_ok = check_ffmpeg_ndi()
+        all_ok &= ndi_ok
     
     print("\n" + "="*40)
     if all_ok:
         print("✓ All dependencies are installed!")
-        print("\nYou can now run: exostream send")
+        print("\nYou can now run: exostream send --stream-name 'MyStream'")
         return 0
     else:
         print("✗ Some dependencies are missing!")
         print("\nPlease install missing dependencies:")
-        print("\nSystem packages:")
-        print("  sudo apt-get install python3-gi python3-gi-cairo gir1.2-gstreamer-1.0 \\")
-        print("    gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good \\")
-        print("    gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav")
         print("\nPython packages:")
         print("  pip3 install -e .")
+        print("\nFFmpeg with NDI:")
+        print("  1. Download NDI SDK from: https://www.ndi.tv/sdk/")
+        print("  2. Install NDI SDK libraries")
+        print("  3. Install or compile FFmpeg with --enable-libndi_newtek")
+        print("     More info: https://trac.ffmpeg.org/wiki/CompilationGuide")
         return 1
 
 if __name__ == "__main__":
