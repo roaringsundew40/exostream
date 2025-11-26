@@ -20,7 +20,8 @@ class FFmpegEncoder:
         video_config: VideoConfig,
         ndi_config: NDIConfig,
         on_error: Optional[Callable] = None,
-        use_hardware: bool = True
+        use_hardware: bool = True,
+        use_raw_input: bool = False
     ):
         """
         Initialize the FFmpeg encoder for NDI output
@@ -34,17 +35,21 @@ class FFmpegEncoder:
             ndi_config: NDI streaming configuration
             on_error: Callback function for errors
             use_hardware: Kept for compatibility, not used (NDI uses raw frames)
+            use_raw_input: Use raw YUYV input instead of MJPEG (lower CPU, if camera supports it)
         """
         self.device_path = device_path
         self.video_config = video_config
         self.ndi_config = ndi_config
         self.on_error = on_error
         self.use_hardware = use_hardware
+        self.use_raw_input = use_raw_input
         
         self.process: Optional[subprocess.Popen] = None
         
         logger.info(f"Using FFmpeg with NDI output (raw frames)")
         logger.info(f"NDI will handle compression internally")
+        if use_raw_input:
+            logger.info(f"Using raw YUYV input (lower CPU usage)")
     
     def build_command(self) -> list:
         """
@@ -61,19 +66,50 @@ class FFmpegEncoder:
             "-hide_banner",
             "-loglevel", "info",
             
-            # Input from V4L2 device (MJPEG from Logitech camera)
+            # Input from V4L2 device
             "-f", "v4l2",
-            "-input_format", "mjpeg",
-            "-video_size", f"{self.video_config.width}x{self.video_config.height}",
-            "-framerate", str(self.video_config.fps),
-            "-i", self.device_path,
         ]
         
-        # NDI requires wrapped_avframe (raw frames), not encoded H.264
-        # NDI handles compression internally
+        # Choose input format based on use_raw_input flag
+        if self.use_raw_input:
+            # Raw YUYV input - no decoding needed, lower CPU
+            # Note: Not all cameras support YUYV at high resolutions
+            cmd.extend([
+                "-input_format", "yuyv422",
+                "-video_size", f"{self.video_config.width}x{self.video_config.height}",
+                "-framerate", str(self.video_config.fps),
+            ])
+        else:
+            # MJPEG input - requires decoding but widely supported
+            cmd.extend([
+                "-input_format", "mjpeg",
+                "-video_size", f"{self.video_config.width}x{self.video_config.height}",
+                "-framerate", str(self.video_config.fps),
+            ])
+        
+        # Buffer settings to reduce drops
         cmd.extend([
+            "-buffer_size", "5M",  # Increase input buffer
+            "-thread_queue_size", "512",  # Larger thread queue
+            "-i", self.device_path,
+        ])
+        
+        # Performance optimizations for raw frame processing
+        cmd.extend([
+            # Use all CPU cores for swscale (pixel format conversion)
+            "-threads", "4",
+            
+            # Fast bilinear scaling (lower quality but faster)
+            "-sws_flags", "fast_bilinear",
+            
+            # NDI raw frame output
             "-vcodec", "wrapped_avframe",  # Pass raw frames to NDI
             "-pix_fmt", "uyvy422",  # NDI preferred pixel format
+            
+            # Reduce latency
+            "-fflags", "nobuffer",
+            "-flags", "low_delay",
+            
             "-f", "libndi_newtek",  # NDI output format
         ])
         

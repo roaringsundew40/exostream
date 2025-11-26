@@ -29,10 +29,17 @@ def cli():
 @click.option('--resolution', '-r', default='1920x1080', help='Video resolution (e.g., 1920x1080)')
 @click.option('--fps', '-f', default=30, type=int, help='Frames per second')
 @click.option('--preset', default=None, help='Quality preset (low, medium, high)')
+@click.option('--raw-input', is_flag=True, help='Use raw YUYV input (lower CPU, try if stuttering)')
 @click.option('--list-devices', '-l', is_flag=True, help='List available video devices and exit')
 @click.option('--verbose', '-v', is_flag=True, help='Verbose logging')
-def send(device, stream_name, groups, resolution, fps, preset, list_devices, verbose):
-    """Start streaming from webcam via NDI (NDI handles compression internally)"""
+def send(device, stream_name, groups, resolution, fps, preset, raw_input, list_devices, verbose):
+    """Start streaming from webcam via NDI (NDI handles compression internally)
+    
+    Performance Tips:
+    - For less stuttering, try lower resolution: --resolution 1280x720
+    - Or lower framerate: --fps 25
+    - 1080p30 works well on Pi 4, but may stutter on older hardware
+    """
     
     # Setup logger
     log_level = "DEBUG" if verbose else "INFO"
@@ -106,6 +113,13 @@ def send(device, stream_name, groups, resolution, fps, preset, list_devices, ver
         console.print(f"  Groups: [yellow]{config.ndi.groups}[/yellow]")
     console.print(f"  [dim]Discoverable on local network via NDI[/dim]")
     
+    # Performance note
+    if config.video.width >= 1920 and config.video.fps >= 30:
+        console.print(f"\n[dim]Note: Sending raw frames at {config.video.resolution}@{config.video.fps}fps")
+        if not raw_input:
+            console.print(f"If stuttering occurs, try: --raw-input (lower CPU)")
+        console.print(f"Or reduce load with: --resolution 1280x720 or --fps 25[/dim]")
+    
     console.print("\n[yellow]Starting stream...[/yellow]")
     console.print("[dim]Press Ctrl+C to stop[/dim]\n")
     
@@ -116,7 +130,8 @@ def send(device, stream_name, groups, resolution, fps, preset, list_devices, ver
             device_path=device,
             video_config=config.video,
             ndi_config=config.ndi,
-            on_error=lambda msg: console.print(f"[red]Error: {msg}[/red]")
+            on_error=lambda msg: console.print(f"[red]Error: {msg}[/red]"),
+            use_raw_input=raw_input
         )
         
         encoder.start()
