@@ -25,12 +25,15 @@ class FFmpegEncoder:
         """
         Initialize the FFmpeg encoder for NDI output
         
+        Note: NDI handles compression internally, so we send raw frames.
+        The use_hardware parameter is kept for API compatibility but not used.
+        
         Args:
             device_path: Path to video device (e.g., /dev/video0)
-            video_config: Video encoding configuration
+            video_config: Video encoding configuration (resolution, fps)
             ndi_config: NDI streaming configuration
             on_error: Callback function for errors
-            use_hardware: Use h264_v4l2m2m hardware encoder
+            use_hardware: Kept for compatibility, not used (NDI uses raw frames)
         """
         self.device_path = device_path
         self.video_config = video_config
@@ -40,17 +43,15 @@ class FFmpegEncoder:
         
         self.process: Optional[subprocess.Popen] = None
         
-        # Determine encoder
-        self.encoder = "h264_v4l2m2m" if use_hardware else "libx264"
-        
-        if use_hardware:
-            logger.info(f"Using FFmpeg with hardware encoder (h264_v4l2m2m) for NDI")
-        else:
-            logger.info(f"Using FFmpeg with software encoder (libx264) for NDI")
+        logger.info(f"Using FFmpeg with NDI output (raw frames)")
+        logger.info(f"NDI will handle compression internally")
     
     def build_command(self) -> list:
         """
         Build the FFmpeg command for NDI output
+        
+        NDI requires raw uncompressed frames, not pre-encoded H.264.
+        We use the wrapped_avframe codec to pass raw frames to NDI.
         
         Returns:
             List of command arguments
@@ -68,36 +69,10 @@ class FFmpegEncoder:
             "-i", self.device_path,
         ]
         
-        # Encoder-specific settings
-        if self.use_hardware:
-            # Hardware encoder (h264_v4l2m2m)
-            cmd.extend([
-                "-pix_fmt", "yuv420p",  # Convert from yuvj422p (MJPEG) to yuv420p
-                "-c:v", "h264_v4l2m2m",
-                "-b:v", f"{self.video_config.bitrate}k",
-                "-g", str(self.video_config.fps * 2),  # Keyframe every 2 seconds
-            ])
-        else:
-            # Software encoder (libx264)
-            cmd.extend([
-                "-c:v", "libx264",
-                "-b:v", f"{self.video_config.bitrate}k",
-                "-maxrate", f"{self.video_config.bitrate}k",
-                "-bufsize", f"{self.video_config.bitrate * 2}k",
-                "-preset", "veryfast",
-                "-tune", "zerolatency",
-                "-g", str(self.video_config.fps * 2),
-                "-bf", "0",
-                "-profile:v", "baseline",
-                "-x264-params", "keyint=%d:min-keyint=%d:scenecut=0" % (
-                    self.video_config.fps * 2,
-                    self.video_config.fps
-                ),
-            ])
-        
-        # NDI output configuration
-        # NDI prefers uyvy422 but can handle other formats
+        # NDI requires wrapped_avframe (raw frames), not encoded H.264
+        # NDI handles compression internally
         cmd.extend([
+            "-vcodec", "wrapped_avframe",  # Pass raw frames to NDI
             "-pix_fmt", "uyvy422",  # NDI preferred pixel format
             "-f", "libndi_newtek",  # NDI output format
         ])
@@ -208,12 +183,13 @@ class FFmpegEncoder:
             Dictionary with statistics
         """
         stats = {
-            'bitrate': self.video_config.bitrate,
             'resolution': self.video_config.resolution,
             'fps': self.video_config.fps,
-            'encoder': self.encoder,
             'device': self.device_path,
+            'protocol': 'ndi',
+            'stream_name': self.ndi_config.stream_name,
             'backend': 'ffmpeg',
+            'codec': 'wrapped_avframe (raw frames)',
         }
         
         return stats

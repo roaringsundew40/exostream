@@ -28,13 +28,11 @@ def cli():
 @click.option('--groups', '-g', default=None, help='NDI groups (comma-separated)')
 @click.option('--resolution', '-r', default='1920x1080', help='Video resolution (e.g., 1920x1080)')
 @click.option('--fps', '-f', default=30, type=int, help='Frames per second')
-@click.option('--bitrate', '-b', default=4000, type=int, help='Video bitrate in kbps')
 @click.option('--preset', default=None, help='Quality preset (low, medium, high)')
-@click.option('--software-encoder', '-s', is_flag=True, help='Use software encoder (libx264)')
 @click.option('--list-devices', '-l', is_flag=True, help='List available video devices and exit')
 @click.option('--verbose', '-v', is_flag=True, help='Verbose logging')
-def send(device, stream_name, groups, resolution, fps, bitrate, preset, software_encoder, list_devices, verbose):
-    """Start streaming from webcam via NDI"""
+def send(device, stream_name, groups, resolution, fps, preset, list_devices, verbose):
+    """Start streaming from webcam via NDI (NDI handles compression internally)"""
     
     # Setup logger
     log_level = "DEBUG" if verbose else "INFO"
@@ -83,8 +81,7 @@ def send(device, stream_name, groups, resolution, fps, bitrate, preset, software
         else:
             video_config = VideoConfig.from_resolution_string(
                 resolution,
-                fps=fps,
-                bitrate=bitrate
+                fps=fps
             )
             ndi_config = NDIConfig(
                 stream_name=stream_name,
@@ -114,13 +111,12 @@ def send(device, stream_name, groups, resolution, fps, bitrate, preset, software
     
     # Create and start encoder
     try:
-        # Use FFmpeg encoder with NDI
+        # Use FFmpeg encoder with NDI (raw frame output)
         encoder = FFmpegEncoder(
             device_path=device,
             video_config=config.video,
             ndi_config=config.ndi,
-            on_error=lambda msg: console.print(f"[red]Error: {msg}[/red]"),
-            use_hardware=not software_encoder
+            on_error=lambda msg: console.print(f"[red]Error: {msg}[/red]")
         )
         
         encoder.start()
@@ -157,10 +153,10 @@ def display_stream_config(config: StreamConfig):
     table.add_row("Protocol", "NDI")
     table.add_row("Resolution", config.video.resolution)
     table.add_row("FPS", str(config.video.fps))
-    table.add_row("Bitrate", f"{config.video.bitrate} kbps")
     table.add_row("Stream Name", config.ndi.stream_name)
     if config.ndi.groups:
         table.add_row("Groups", config.ndi.groups)
+    table.add_row("Compression", "NDI (automatic)")
     
     console.print(table)
 
