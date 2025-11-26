@@ -359,8 +359,7 @@ exostream/
 │   │   └── gst_utils.py    # GStreamer helpers (legacy)
 │   └── sender/
 │       ├── webcam.py       # V4L2 device detection
-│       ├── ffmpeg_encoder.py # FFmpeg NDI encoder (main)
-│       ├── encoder.py      # GStreamer encoder (legacy)
+│       ├── ffmpeg_encoder.py # FFmpeg NDI encoder
 │       └── cli.py          # Sender CLI commands
 ├── requirements.txt
 ├── setup.py
@@ -399,11 +398,11 @@ python3 check_dependencies.py
 
 ### Adding Features
 
-The main encoder is in `exostream/sender/ffmpeg_encoder.py`. Key classes:
+The main encoder is in `exostream/sender/ffmpeg_encoder.py`. Key components:
 - `FFmpegEncoder`: Handles FFmpeg process and NDI streaming
-- `VideoConfig`: Resolution, FPS, bitrate configuration
-- `NDIConfig`: NDI-specific settings (name, groups)
-- `WebcamManager`: V4L2 device detection
+- `VideoConfig`: Resolution, FPS configuration
+- `NDIConfig`: NDI-specific settings (stream name, groups)
+- `WebcamManager`: V4L2 device detection and enumeration
 
 ## Roadmap
 
