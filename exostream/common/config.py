@@ -46,9 +46,10 @@ class StreamConfig:
     def from_preset(cls, preset: str = "medium", stream_name: str = "Exostream"):
         """Load configuration from preset"""
         presets = {
-            "low": VideoConfig(width=1280, height=720, fps=25, bitrate=3000),
-            "medium": VideoConfig(width=1920, height=1080, fps=30, bitrate=6000),
+            "low": VideoConfig(width=1280, height=720, fps=30, bitrate=4000),
+            "medium": VideoConfig(width=1280, height=720, fps=30, bitrate=6000),
             "high": VideoConfig(width=1920, height=1080, fps=30, bitrate=8000),
+            "ultra": VideoConfig(width=1920, height=1080, fps=30, bitrate=10000),
         }
         
         if preset not in presets:
