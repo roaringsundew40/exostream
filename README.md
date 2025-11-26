@@ -1,70 +1,151 @@
 # Exostream
 
-Stream webcam from Raspberry Pi using GStreamer with hardware H.264 encoding and SRT (Secure Reliable Transport) protocol.
+Stream webcam from Raspberry Pi using **NDI (Network Device Interface)** protocol with FFmpeg.
 
 ## Features
 
-- **Dual Backend Support** - Choose between GStreamer or FFmpeg
-- **Hardware H.264 Encoding** - Utilizes Raspberry Pi's hardware encoder for minimal CPU usage
-- **FFmpeg Integration** - Alternative hardware encoder (h264_v4l2m2m) that may work better on some systems
-- **SRT Streaming** - Reliable streaming with low latency over local network or internet
-- **Listener Mode** - Raspberry Pi acts as a server, clients connect to it
-- **Encryption Support** - Optional SRT passphrase encryption
+- **NDI Streaming** - Industry-standard protocol for professional video over IP
+- **Automatic Discovery** - NDI streams are automatically discoverable on your network
+- **Raw Frame Streaming** - Option to send uncompressed frames; NDI handles compression internally
 - **Quality Presets** - Easy configuration with low/medium/high presets
-- **Beautiful CLI** - Rich terminal interface with real-time information
+- **Flexible Input Formats** - Supports MJPEG (for high resolution) or YUYV (for lower CPU usage)
+- **NDI Groups** - Organize streams into groups for better network management
+- **Beautiful CLI** - Rich terminal interface with device detection
+- **Cross-Platform Clients** - View streams with OBS, vMix, NDI Studio Monitor, VLC, and more
+
+## What is NDI?
+
+NDI (Network Device Interface) is a royalty-free protocol that allows video equipment to communicate over a local network. Unlike traditional streaming protocols:
+- **Zero configuration** - Streams automatically appear on the network
+- **Low latency** - Optimized for real-time video production
+- **High quality** - Handles compression intelligently
+- **Widely supported** - Works with OBS, vMix, Wirecast, and many other tools
 
 ## Requirements
 
 ### Hardware
-- Raspberry Pi 3 or 4
-- Logitech C920 or C930 webcam (or any USB webcam)
-- Network connection
+- Raspberry Pi 3, 4, or 5
+- USB webcam (e.g., Logitech C920, C930, or any V4L2-compatible camera)
+- Network connection (Ethernet recommended for best quality)
 
 ### Software
 - Python 3.8 or higher
-- GStreamer 1.x with SRT plugin
-- System packages (install on Raspberry Pi):
+- FFmpeg with NDI support
+- System packages:
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y \
-    python3-pip \
-    python3-gi \
-    python3-gi-cairo \
-    gir1.2-gstreamer-1.0 \
-    gstreamer1.0-tools \
-    gstreamer1.0-plugins-base \
-    gstreamer1.0-plugins-good \
-    gstreamer1.0-plugins-bad \
-    gstreamer1.0-plugins-ugly \
-    gstreamer1.0-libav
+sudo apt-get install -y python3-pip
 ```
 
 ## Installation
 
-### On Raspberry Pi (Sender)
+### 1. Install FFmpeg with NDI Support
 
-1. Clone the repository:
+FFmpeg needs to be compiled with NDI support. Here are your options:
+
+#### Option A: Use a Pre-compiled Binary (Easiest)
+Some distributions provide FFmpeg with NDI support. Check if yours does:
 ```bash
-git clone <repository-url>
+ffmpeg -formats 2>&1 | grep libndi_newtek
+```
+
+If you see `libndi_newtek`, you're good to go!
+
+#### Option B: Build FFmpeg with NDI Support (Recommended)
+
+This uses the [lplassman/FFMPEG-NDI repository](https://github.com/lplassman/FFMPEG-NDI/) which provides scripts to build FFmpeg with NDI support.
+
+1. **Clone the FFMPEG-NDI repository:**
+   ```bash
+   git clone https://github.com/lplassman/FFMPEG-NDI.git
+   ```
+
+2. **Clone the FFmpeg repository and checkout version 5.1 or later:**
+   ```bash
+   git clone https://git.ffmpeg.org/ffmpeg.git
+   cd ffmpeg
+   git checkout n5.1
+   ```
+
+3. **Apply generic git email (required for patching):**
+   ```bash
+   git config user.email "you@example.com"
+   ```
+
+4. **Apply the NDI patch to restore NDI support:**
+   ```bash
+   sudo git am ../FFMPEG-NDI/libndi.patch
+   sudo cp ../FFMPEG-NDI/libavdevice/libndi_newtek_* libavdevice/
+   ```
+
+5. **Install build prerequisites:**
+   ```bash
+   sudo bash ../FFMPEG-NDI/preinstall.sh
+   ```
+
+6. **Install NDI libraries for your architecture:**
+
+   **For Raspberry Pi 4 (64-bit):**
+   ```bash
+   sudo bash ../FFMPEG-NDI/install-ndi-rpi4-aarch64.sh
+   ```
+
+   **For Raspberry Pi 4 (32-bit):**
+   ```bash
+   sudo bash ../FFMPEG-NDI/install-ndi-rpi4-armhf.sh
+   ```
+
+   **For Raspberry Pi 3 (32-bit):**
+   ```bash
+   sudo bash ../FFMPEG-NDI/install-ndi-rpi3-armhf.sh
+   ```
+
+   **For x86_64 (Intel/AMD):**
+   ```bash
+   sudo bash ../FFMPEG-NDI/install-ndi-x86_64.sh
+   ```
+
+   **For generic ARM64 or ARM32:**
+   These require the NDI Advanced SDK. Download it manually from [ndi.tv](https://ndi.tv), extract the tar file, and copy it to the ffmpeg directory, then run:
+   ```bash
+   # ARM64
+   sudo bash ../FFMPEG-NDI/install-ndi-generic-aarch64.sh
+   # OR ARM32
+   sudo bash ../FFMPEG-NDI/install-ndi-generic-armhf.sh
+   ```
+
+7. **Build and install FFmpeg:**
+   ```bash
+   ./configure --enable-nonfree --enable-libndi_newtek
+   make -j$(nproc)
+   sudo make install
+   ```
+
+8. **Verify NDI support:**
+   ```bash
+   ffmpeg -formats 2>&1 | grep libndi_newtek
+   ```
+   
+   You should see `libndi_newtek` in the output.
+
+### 2. Install Exostream
+
+Clone the repository:
+```bash
+git clone https://github.com/roaringsundew40/exostream
 cd exostream
 ```
 
-2. Install Python dependencies:
+Install Python dependencies:
 ```bash
 pip3 install -e .
 ```
 
-**Note:** If you're using a virtual environment, create it with system site packages:
-```bash
-python3 -m venv --system-site-packages venv
-source venv/bin/activate
-pip install -e .
-```
+### 3. Verify Installation
 
-3. Verify installation:
 ```bash
-# Check all dependencies
+# Check dependencies
 python3 check_dependencies.py
 
 # Verify Exostream command
@@ -75,28 +156,17 @@ exostream --version
 
 ### Starting the Stream (Raspberry Pi)
 
-#### Try FFmpeg Hardware Encoding First (NEW!)
+#### Basic Usage
 ```bash
-# Test if FFmpeg hardware encoder works
-bash test_ffmpeg_hw.sh
-
-# If test passes, use FFmpeg with hardware encoding
-exostream send --use-ffmpeg
-```
-
-FFmpeg's h264_v4l2m2m encoder often works when GStreamer's doesn't! See [FFMPEG_GUIDE.md](FFMPEG_GUIDE.md) for details.
-
-#### Basic Usage (GStreamer)
-```bash
-exostream send
+exostream send --name "MyCamera"
 ```
 
 This will start streaming with default settings:
 - Device: `/dev/video0`
 - Resolution: 1920x1080
 - FPS: 30
-- Bitrate: 6000 kbps
-- Port: 9000
+- Stream Name: "MyCamera" (visible to NDI clients)
+- Input Format: MJPEG (best for 1080p)
 
 #### List Available Cameras
 ```bash
@@ -106,70 +176,42 @@ exostream send --list-devices
 #### Custom Configuration
 ```bash
 exostream send \
+    --name "Studio Camera 1" \
     --device /dev/video0 \
-    --port 9000 \
     --resolution 1920x1080 \
-    --fps 30 \
-    --bitrate 4000
+    --fps 30
 ```
 
-#### Using Presets
+#### Using Quality Presets
 ```bash
-# Low quality (720p, 2Mbps)
-exostream send --preset low
+# Low quality (720p, 3Mbps)
+exostream send --name "MyCamera" --preset low
 
-# Medium quality (1080p, 4Mbps) - default
-exostream send --preset medium
+# Medium quality (1080p, 6Mbps) - default
+exostream send --name "MyCamera" --preset medium
 
-# High quality (1080p, 6Mbps)
-exostream send --preset high
+# High quality (1080p, 8Mbps)
+exostream send --name "MyCamera" --preset high
 ```
 
-#### With Encryption
+#### Using Raw YUYV Input (Lower CPU)
+For 720p streaming, you can use raw YUYV input which reduces CPU usage but may cause more stuttering:
 ```bash
-exostream send --passphrase "mysecretpassword"
+exostream send --name "MyCamera" --resolution 1280x720 --raw-input
+```
+
+**Note:** Most cameras only support YUYV at 720p or lower due to USB bandwidth limitations. For 1080p, use MJPEG (default).
+
+#### NDI Groups
+Organize your streams into groups:
+```bash
+exostream send --name "Camera 1" --groups "Studio,Production"
 ```
 
 #### Verbose Mode
 ```bash
-exostream send --verbose
+exostream send --name "MyCamera" --verbose
 ```
-
-### Connecting to the Stream (Client Computer)
-
-Once the Raspberry Pi is streaming, you can connect from any computer on the network using various tools:
-
-#### Using VLC Media Player
-```bash
-vlc srt://<raspberry-pi-ip>:9000
-```
-
-#### Using FFplay (from FFmpeg)
-```bash
-ffplay srt://<raspberry-pi-ip>:9000
-```
-
-#### Using GStreamer (Linux)
-```bash
-gst-launch-1.0 \
-    srcsrc uri=srt://<raspberry-pi-ip>:9000 ! \
-    tsdemux ! \
-    h264parse ! \
-    avdec_h264 ! \
-    videoconvert ! \
-    autovideosink
-```
-
-#### Using OBS Studio
-1. Add a new Media Source
-2. Set URL to: `srt://<raspberry-pi-ip>:9000`
-3. Uncheck "Local File"
-
-### Finding Your Raspberry Pi's IP Address
-```bash
-hostname -I
-```
-
 ## Configuration Options
 
 ### Command Line Options
@@ -177,166 +219,246 @@ hostname -I
 | Option | Short | Default | Description |
 |--------|-------|---------|-------------|
 | `--device` | `-d` | `/dev/video0` | Video device path |
-| `--port` | `-p` | `9000` | SRT port to listen on |
+| `--name` | `-n` | `exostream` | NDI stream name (visible to clients) |
+| `--groups` | `-g` | None | NDI groups (comma-separated) |
 | `--resolution` | `-r` | `1920x1080` | Video resolution |
 | `--fps` | `-f` | `30` | Frames per second |
-| `--bitrate` | `-b` | `4000` | Video bitrate in kbps |
 | `--preset` | | | Quality preset (low/medium/high) |
-| `--passphrase` | | | SRT encryption passphrase |
-| `--software-encoder` | `-s` | | Use GStreamer software encoder (x264enc) |
-| `--use-ffmpeg` | | | Use FFmpeg with hardware encoder (h264_v4l2m2m) |
-| `--ffmpeg-software` | | | Use FFmpeg with software encoder (libx264) |
+| `--raw-input` | | | Use raw YUYV input (works best at 720p) |
 | `--list-devices` | `-l` | | List available devices and exit |
 | `--verbose` | `-v` | | Enable verbose logging |
 
 ### Quality Presets
 
-| Preset | Resolution | FPS | Bitrate | Use Case |
-|--------|-----------|-----|---------|----------|
-| low | 1280x720 | 25 | 2 Mbps | Low bandwidth networks |
-| medium | 1920x1080 | 30 | 4 Mbps | Balanced quality/bandwidth |
-| high | 1920x1080 | 30 | 6 Mbps | High quality, good network |
+| Preset | Resolution | FPS | Bitrate* | Use Case |
+|--------|-----------|-----|----------|----------|
+| low | 1280x720 | 25 | 3 Mbps | Lower bandwidth networks |
+| medium | 1920x1080 | 30 | 6 Mbps | Balanced quality/bandwidth |
+| high | 1920x1080 | 30 | 8 Mbps | High quality, good network |
 
-## Known Issues
+\* Note: NDI handles compression internally. The bitrate is a reference for the raw input quality.
 
-### Hardware Encoder (v4l2h264enc) May Not Work
-The Raspberry Pi 4's v4l2h264enc driver is **buggy on many systems**. If hardware encoding fails:
+## Understanding Raw Frame Streaming
 
-**Use software encoding instead:**
-```bash
-exostream send -s --resolution 1280x720 --fps 30 --bitrate 6000
-```
+Unlike traditional streaming that pre-encodes video to H.264:
+- **Exostream sends raw uncompressed frames** to the NDI library
+- **NDI handles compression** using its proprietary codec
+- This provides **better quality** and **lower latency** than pre-encoded streams
+- The CPU does pixel format conversion (MJPEG→Raw or YUYV→Raw), not H.264 encoding
 
-This uses CPU instead of GPU but works reliably. See [PERFORMANCE_GUIDE.md](PERFORMANCE_GUIDE.md) for optimization tips.
+### Input Format Notes
 
-### Recommended Settings for Software Encoding
-- **Best:** 720p @ 30fps, 6000kbps bitrate (smooth, low latency)
-- **Alternative:** 1080p @ 20-24fps, 6000kbps (higher res, cinematic feel)
+**MJPEG Input (Default)**:
+- ✅ Supports high resolutions (1080p30)
+- ✅ Widely supported by cameras
+- ⚠️  Requires JPEG decoding (moderate CPU usage)
+- 📝 Recommended for 1080p streaming
+
+**YUYV Raw Input (--raw-input flag)**:
+- ✅ No decoding needed (lower CPU usage)
+- ✅ Best performance at 720p
+- ❌ USB bandwidth limited (1080p30 = ~120MB/s, exceeds USB 2.0)
+- ❌ Many cameras don't support YUYV at 1080p30
+- 📝 Recommended for 720p streaming only
+
+## Performance & Bandwidth
+
+### Network Bandwidth
+
+NDI uses approximately:
+- **720p30**: 30-50 Mbps
+- **1080p30**: 70-125 Mbps
+
+**Recommendation**: Use Gigabit Ethernet for best results. WiFi may work for 720p but is not recommended for 1080p.
+
+### CPU Usage
+
+On Raspberry Pi 4:
+- **720p30 YUYV**: ~15-25% CPU (lowest)
+- **720p30 MJPEG**: ~25-35% CPU
+- **1080p30 MJPEG**: ~40-60% CPU
+
+The CPU handles:
+1. Camera input decoding (if MJPEG)
+2. Pixel format conversion (to UYVY422 for NDI)
+3. Frame buffering and network transmission
 
 ## Troubleshooting
 
-### Installation: PyGObject/girepository-2.0 not found
-If `pip install -e .` fails with an error about `girepository-2.0` or PyGObject:
+### Installation: FFmpeg NDI support not found
 
-1. Make sure you installed the system packages first:
 ```bash
-sudo apt-get install python3-gi python3-gi-cairo gir1.2-gstreamer-1.0
+# Verify FFmpeg has NDI
+ffmpeg -formats 2>&1 | grep libndi_newtek
 ```
 
-2. If using a virtual environment, recreate it with system packages:
-```bash
-deactivate  # if already in venv
-rm -rf venv
-python3 -m venv --system-site-packages venv
-source venv/bin/activate
-pip install -e .
-```
-
-3. Verify with the dependency checker:
-```bash
-python3 check_dependencies.py
-```
+If not found, you need to compile FFmpeg with `--enable-libndi_newtek`. See Installation section.
 
 ### No video devices found
+
 Make sure your webcam is connected and recognized:
 ```bash
 ls -l /dev/video*
-v4l2-ctl --list-devices
 ```
 
-### Port already in use
-Check if another process is using the port:
+Test with:
 ```bash
-sudo netstat -tulpn | grep 9000
+exostream send --list-devices
 ```
 
-### Pipeline fails to start
-Check GStreamer installation and SRT plugin:
-```bash
-gst-inspect-1.0 srtsink
-gst-inspect-1.0 v4l2h264enc  # Pi 4
-gst-inspect-1.0 omxh264enc   # Pi 3
-```
+### Stream not appearing on network
 
-### High CPU usage
-- Make sure hardware encoder is being used (check logs)
-- Try lowering resolution or bitrate
-- Use a quality preset instead of custom settings
+1. **Check NDI is broadcasting**:
+   - Look for "NDI stream name: ..." in the output
+   - Make sure FFmpeg didn't error out
 
-### Stream is choppy or has artifacts
-- Increase SRT latency: The latency is currently hardcoded to 120ms in the config
-- Reduce bitrate or resolution
-- Check network stability
-- Ensure good lighting for the camera
+2. **Check network connectivity**:
+   - Ensure Pi and client are on same network
+   - NDI uses mDNS - check firewall allows multicast
+
+3. **Check NDI groups**:
+   - If you specified `--groups`, make sure your client is looking in those groups
+
+### Performance issues / Stuttering
+
+1. **Lower resolution**:
+   ```bash
+   exostream send --name "MyCamera" --resolution 1280x720
+   ```
+
+2. **Use YUYV at 720p** (if camera supports it):
+   ```bash
+   exostream send --name "MyCamera" --resolution 1280x720 --raw-input
+   ```
+
+3. **Use Ethernet instead of WiFi**
+
+4. **Check CPU usage**:
+   ```bash
+   top
+   ```
+
+### Camera errors with --raw-input at 1080p
+
+This is expected! Most USB cameras can't provide YUYV at 1080p30 due to bandwidth limits:
+- Remove `--raw-input` flag to use MJPEG
+- Or use `--resolution 1280x720` with `--raw-input`
 
 ## Architecture
 
 ```
-Raspberry Pi (Sender)                    Client Computer
-     Webcam                                  Display
-       ↓                                        ↑
-   V4L2 Capture                            SRT Client
-       ↓                                        ↑
-Hardware H.264 Encoder                    H.264 Decoder
-       ↓                                        ↑
-   SRT Listener  ←------- Network -------  SRT Caller
-   (Port 9000)
+Raspberry Pi (Sender)                         Client Computer
+     Webcam                                    OBS / vMix / NDI Monitor
+       ↓                                              ↑
+   V4L2 Capture                                  NDI Receiver
+   (MJPEG/YUYV)                                       ↑
+       ↓                                              ↑
+   FFmpeg Decode                                 NDI Decode
+       ↓                                              ↑
+  Raw Frames (UYVY422)                               ↑
+       ↓                                              ↑
+   NDI Encoding  ←-------- Network (mDNS) -----------┘
+   (libndi_newtek)
 ```
 
 ### Pipeline Structure
 
-The GStreamer pipeline on the Raspberry Pi:
+The FFmpeg pipeline:
 ```
-v4l2src → capsfilter → queue → v4l2h264enc/omxh264enc → 
-h264parse → mpegtsmux → queue → srtsink
+v4l2 input → decode (if MJPEG) → pixel format conversion → 
+wrapped_avframe codec → libndi_newtek output
 ```
 
-## Development
+## Project Structure
 
-### Project Structure
 ```
 exostream/
 ├── exostream/
 │   ├── __init__.py
 │   ├── cli.py              # Main CLI entry point
 │   ├── common/
-│   │   ├── config.py       # Configuration management
-│   │   ├── logger.py       # Logging setup
+│   │   ├── config.py       # Configuration management (NDI, Video)
+│   │   ├── logger.py       # Logging setup with Rich
 │   │   ├── network.py      # Network utilities
-│   │   └── gst_utils.py    # GStreamer helpers
+│   │   └── gst_utils.py    # GStreamer helpers (legacy)
 │   └── sender/
 │       ├── webcam.py       # V4L2 device detection
-│       ├── encoder.py      # GStreamer encoding pipeline
+│       ├── ffmpeg_encoder.py # FFmpeg NDI encoder (main)
+│       ├── encoder.py      # GStreamer encoder (legacy)
 │       └── cli.py          # Sender CLI commands
 ├── requirements.txt
 ├── setup.py
+├── check_dependencies.py   # Dependency checker
+├── test_camera.py         # Camera testing utility
 └── README.md
 ```
 
+## Known Limitations
+
+1. **NDI SDK Required**: FFmpeg must be compiled with NDI support
+2. **Local Network Only**: NDI is designed for local networks, not internet streaming
+3. **High Bandwidth**: NDI uses substantial bandwidth (up to 125 Mbps for 1080p)
+4. **Raspberry Pi Performance**: Higher resolutions require adequate cooling for sustained streaming
+
+## Alternatives
+
+If NDI doesn't fit your needs:
+- **For Internet Streaming**: Consider SRT, RTMP, or WebRTC
+- **For Recording**: Use H.264 encoding directly to file
+- **For Lower Bandwidth**: Consider pre-encoding to H.264 instead of raw frames
+
+## Development
+
 ### Running Tests
+
+Test your camera:
 ```bash
-# TODO: Add tests
-pytest
+python3 test_camera.py --device /dev/video0
 ```
+
+Check dependencies:
+```bash
+python3 check_dependencies.py
+```
+
+### Adding Features
+
+The main encoder is in `exostream/sender/ffmpeg_encoder.py`. Key classes:
+- `FFmpegEncoder`: Handles FFmpeg process and NDI streaming
+- `VideoConfig`: Resolution, FPS, bitrate configuration
+- `NDIConfig`: NDI-specific settings (name, groups)
+- `WebcamManager`: V4L2 device detection
 
 ## Roadmap
 
-### Phase 2: Robustness (Coming Soon)
-- [ ] Error handling and reconnection logic
-- [ ] Graceful shutdown
+### Near Term
+- [ ] Audio support
 - [ ] Configuration file support
+- [ ] Real-time statistics display
+- [ ] Automatic reconnection on network issues
 
-### Phase 3: Advanced Features
-- [ ] Multiple quality presets
-- [ ] Real-time stats dashboard
-- [ ] Recording while streaming
-- [ ] Adaptive bitrate
-
-### Phase 4: Polish
-- [ ] Beautiful terminal UI with live stats
-- [ ] Network bandwidth adaptive bitrate
-- [ ] Automatic reconnection
+### Future
+- [ ] Multiple camera support
+- [ ] NDI HX support (lower bandwidth)
 - [ ] Web-based configuration interface
+- [ ] Systemd service file for auto-start
+
+## FAQ
+
+**Q: Why NDI instead of RTMP/YouTube/Twitch?**  
+A: NDI is designed for professional production workflows with ultra-low latency. Use RTMP for internet streaming to platforms like YouTube.
+
+**Q: Can I stream to the internet with this?**  
+A: NDI is for local networks. For internet streaming, consider SRT, RTMP, or WebRTC solutions.
+
+**Q: Why is my stream using so much bandwidth?**  
+A: NDI prioritizes quality and latency over bandwidth. For lower bandwidth, use NDI HX (not yet supported) or switch to H.264-based streaming.
+
+**Q: Does this work with Raspberry Pi 3?**  
+A: Yes, but 1080p may be challenging. Use 720p for best results on Pi 3.
+
+**Q: Can I use multiple cameras?**  
+A: Currently, one camera per instance. You can run multiple Exostream instances with different stream names.
 
 ## License
 
@@ -348,7 +470,15 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## Acknowledgments
 
-- GStreamer team for the excellent multimedia framework
-- SRT Alliance for the SRT protocol
-- Raspberry Pi Foundation for the amazing hardware
+- NewTek/Vizrt for the NDI protocol and SDK
+- FFmpeg team for the excellent multimedia framework
+- Raspberry Pi Foundation for amazing hardware
+- The open source community
 
+## Support
+
+For issues and questions:
+1. Check the Troubleshooting section above
+2. Run `python3 check_dependencies.py` to verify your setup
+3. Run with `--verbose` flag for detailed logs
+4. Open an issue on GitHub with your logs
