@@ -289,7 +289,8 @@ class IPCClientManager:
             'raw_input': raw_input,
             'groups': groups
         }
-        return self.client.call("stream.start", params)
+        # Use longer timeout for start command (10s) since FFmpeg startup can be slow
+        return self.client.call("stream.start", params, timeout=10.0)
     
     def stop_stream(self) -> Dict[str, Any]:
         """

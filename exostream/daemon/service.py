@@ -173,8 +173,8 @@ class StreamingService:
             )
             self._encoder_thread.start()
             
-            # Give it a moment to start
-            time.sleep(0.5)
+            # Give it a brief moment to start (reduced from 0.5s to 0.2s)
+            time.sleep(0.2)
             
             # Check if encoder started successfully
             if self._encoder.process is None or self._encoder.process.poll() is not None:
