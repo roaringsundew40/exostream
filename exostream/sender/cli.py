@@ -30,10 +30,9 @@ def cli():
 @click.option('--fps', '-f', default=30, type=int, help='Frames per second')
 @click.option('--preset', default=None, help='Quality preset (low, medium, high)')
 @click.option('--raw-input', is_flag=True, help='Use raw YUYV input instead of MJPEG (works best at 720p, not 1080p)')
-@click.option('--smooth', '-s', is_flag=True, help='Enable motion smoothing (better frame timing, adds ~50ms latency)')
 @click.option('--list-devices', '-l', is_flag=True, help='List available video devices and exit')
 @click.option('--verbose', '-v', is_flag=True, help='Verbose logging')
-def send(device, stream_name, groups, resolution, fps, preset, raw_input, smooth, list_devices, verbose):
+def send(device, stream_name, groups, resolution, fps, preset, raw_input, list_devices, verbose):
     """Start streaming from webcam via NDI (NDI handles compression internally)
     
     Performance Tips:
@@ -105,7 +104,7 @@ def send(device, stream_name, groups, resolution, fps, preset, raw_input, smooth
         sys.exit(1)
     
     # Display configuration
-    display_stream_config(config, smooth=smooth)
+    display_stream_config(config)
     
     # Display NDI stream information
     console.print(f"\n[bold green]NDI Stream Information:[/bold green]")
@@ -124,8 +123,6 @@ def send(device, stream_name, groups, resolution, fps, preset, raw_input, smooth
             perf_msg += "If stuttering occurs, reduce resolution: --resolution 1280x720\n"
             perf_msg += "Or lower framerate: --fps 25[/dim]"
         console.print(perf_msg)
-    elif raw_input and not smooth:
-        console.print(f"\n[dim]Tip: For smoother motion with raw input, add --smooth flag[/dim]")
     
     console.print("\n[yellow]Starting stream...[/yellow]")
     console.print("[dim]Press Ctrl+C to stop[/dim]\n")
@@ -138,8 +135,7 @@ def send(device, stream_name, groups, resolution, fps, preset, raw_input, smooth
             video_config=config.video,
             ndi_config=config.ndi,
             on_error=lambda msg: console.print(f"[red]Error: {msg}[/red]"),
-            use_raw_input=raw_input,
-            smooth_motion=smooth
+            use_raw_input=raw_input
         )
         
         encoder.start()
@@ -167,7 +163,7 @@ def display_devices_table(devices):
     console.print(table)
 
 
-def display_stream_config(config: StreamConfig, smooth: bool = False):
+def display_stream_config(config: StreamConfig):
     """Display streaming configuration"""
     table = Table(title="Stream Configuration", box=box.ROUNDED, show_header=False)
     table.add_column("Setting", style="cyan")
@@ -180,8 +176,6 @@ def display_stream_config(config: StreamConfig, smooth: bool = False):
     if config.ndi.groups:
         table.add_row("Groups", config.ndi.groups)
     table.add_row("Compression", "NDI (automatic)")
-    if smooth:
-        table.add_row("Smoothing", "Enabled")
     
     console.print(table)
 
