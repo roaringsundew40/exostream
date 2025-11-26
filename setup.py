@@ -5,9 +5,9 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="exostream",
-    version="0.2.0",
+    version="0.3.0",
     author="Naman",
-    description="Stream webcam from Raspberry Pi using NDI",
+    description="Stream webcam from Raspberry Pi using NDI (service-based architecture)",
     long_description=long_description,
     long_description_content_type="text/markdown",
     packages=find_packages(),
@@ -28,6 +28,7 @@ setup(
     entry_points={
         "console_scripts": [
             "exostream=exostream.cli:main",
+            "exostreamd=exostream.daemon.main:main",
         ],
     },
     include_package_data=True,
