@@ -115,10 +115,11 @@ def send(device, stream_name, groups, resolution, fps, preset, raw_input, list_d
     
     # Performance note
     if config.video.width >= 1920 and config.video.fps >= 30:
-        console.print(f"\n[dim]Note: Sending raw frames at {config.video.resolution}@{config.video.fps}fps")
+        perf_msg = f"\n[dim]Note: Sending raw frames at {config.video.resolution}@{config.video.fps}fps\n"
         if not raw_input:
-            console.print(f"If stuttering occurs, try: --raw-input (lower CPU)")
-        console.print(f"Or reduce load with: --resolution 1280x720 or --fps 25[/dim]")
+            perf_msg += "If stuttering occurs, try: --raw-input (lower CPU)\n"
+        perf_msg += "Or reduce load with: --resolution 1280x720 or --fps 25[/dim]"
+        console.print(perf_msg)
     
     console.print("\n[yellow]Starting stream...[/yellow]")
     console.print("[dim]Press Ctrl+C to stop[/dim]\n")
