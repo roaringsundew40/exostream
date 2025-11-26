@@ -21,7 +21,8 @@ class FFmpegEncoder:
         ndi_config: NDIConfig,
         on_error: Optional[Callable] = None,
         use_hardware: bool = True,
-        use_raw_input: bool = False
+        use_raw_input: bool = False,
+        smooth_motion: bool = False
     ):
         """
         Initialize the FFmpeg encoder for NDI output
@@ -36,6 +37,7 @@ class FFmpegEncoder:
             on_error: Callback function for errors
             use_hardware: Kept for compatibility, not used (NDI uses raw frames)
             use_raw_input: Use raw YUYV input instead of MJPEG (lower CPU, if camera supports it)
+            smooth_motion: Enable frame buffering and timing smoothing
         """
         self.device_path = device_path
         self.video_config = video_config
@@ -43,6 +45,7 @@ class FFmpegEncoder:
         self.on_error = on_error
         self.use_hardware = use_hardware
         self.use_raw_input = use_raw_input
+        self.smooth_motion = smooth_motion
         
         self.process: Optional[subprocess.Popen] = None
         
@@ -50,6 +53,8 @@ class FFmpegEncoder:
         logger.info(f"NDI will handle compression internally")
         if use_raw_input:
             logger.info(f"Using raw YUYV input (lower CPU usage)")
+        if smooth_motion:
+            logger.info(f"Motion smoothing enabled (adds slight latency)")
     
     def build_command(self) -> list:
         """
@@ -103,16 +108,31 @@ class FFmpegEncoder:
             
             # Fast bilinear scaling (lower quality but faster)
             "-sws_flags", "fast_bilinear",
+        ])
+        
+        # Add video filters for smoothing if enabled
+        if self.smooth_motion:
+            # Frame rate filter for timing consistency + small buffer for smoothness
+            filter_str = f"fps={self.video_config.fps},setpts=PTS-STARTPTS"
+            cmd.extend(["-vf", filter_str])
             
-            # NDI raw frame output
+            # Slightly relaxed latency settings for smoother delivery
+            cmd.extend([
+                "-vsync", "cfr",  # Constant frame rate (smooth timing)
+            ])
+        else:
+            # Low latency mode (default)
+            cmd.extend([
+                "-vsync", "passthrough",  # Keep original timing
+                "-fflags", "nobuffer+flush_packets",
+                "-flags", "low_delay",
+                "-max_delay", "0",
+            ])
+        
+        # NDI raw frame output
+        cmd.extend([
             "-vcodec", "wrapped_avframe",  # Pass raw frames to NDI
             "-pix_fmt", "uyvy422",  # NDI preferred pixel format
-            
-            # Low latency flags
-            "-fflags", "nobuffer+flush_packets",
-            "-flags", "low_delay",
-            "-max_delay", "0",
-            
             "-f", "libndi_newtek",  # NDI output format
         ])
         
