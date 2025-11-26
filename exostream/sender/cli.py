@@ -32,7 +32,7 @@ def cli():
 @click.option('--raw-input', is_flag=True, help='Use raw YUYV input instead of MJPEG (works best at 720p, not 1080p)')
 @click.option('--list-devices', '-l', is_flag=True, help='List available video devices and exit')
 @click.option('--verbose', '-v', is_flag=True, help='Verbose logging')
-def send(device, stream_name, groups, resolution, fps, preset, raw_input, list_devices, verbose):
+def send(device, name, groups, resolution, fps, preset, raw_input, list_devices, verbose):
     """Start streaming from webcam via NDI (NDI handles compression internally)"""
     
     # Setup logger
@@ -75,7 +75,7 @@ def send(device, stream_name, groups, resolution, fps, preset, raw_input, list_d
     # Create configuration
     try:
         if preset:
-            config = StreamConfig.from_preset(preset, stream_name=stream_name)
+            config = StreamConfig.from_preset(preset, stream_name=name)
             config.device = device
             if groups:
                 config.ndi.groups = groups
@@ -85,7 +85,7 @@ def send(device, stream_name, groups, resolution, fps, preset, raw_input, list_d
                 fps=fps
             )
             ndi_config = NDIConfig(
-                stream_name=stream_name,
+                stream_name=name,
                 groups=groups
             )
             config = StreamConfig(
