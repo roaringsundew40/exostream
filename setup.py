@@ -27,7 +27,7 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            "exostream=exostream.cli:main",
+            "exostream=exostream.cli.main:cli",
             "exostreamd=exostream.daemon.main:main",
         ],
     },
