@@ -61,6 +61,7 @@ def detect_h264_encoder(prefer_software: bool = False) -> Optional[str]:
         # Check for Raspberry Pi hardware encoders in order of preference
         # Note: v4l2h264enc has issues on some Pi 4 systems, so we offer software fallback
         encoders = [
+            'h264_v4l2m2m',      # FFmpeg hardware encoder
             'v4l2h264enc',      # Raspberry Pi 4 hardware encoder (can be buggy)
             'omxh264enc',       # Raspberry Pi 3 hardware encoder (deprecated but still used)
             'x264enc',          # Software fallback (reliable but CPU intensive)
