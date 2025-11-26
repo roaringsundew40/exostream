@@ -29,7 +29,7 @@ def cli():
 @click.option('--resolution', '-r', default='1920x1080', help='Video resolution (e.g., 1920x1080)')
 @click.option('--fps', '-f', default=30, type=int, help='Frames per second')
 @click.option('--preset', default=None, help='Quality preset (low, medium, high)')
-@click.option('--raw-input', is_flag=True, help='Use raw YUYV input (lower CPU, try if stuttering)')
+@click.option('--raw-input', is_flag=True, help='Use raw YUYV input instead of MJPEG (works best at 720p, not 1080p)')
 @click.option('--list-devices', '-l', is_flag=True, help='List available video devices and exit')
 @click.option('--verbose', '-v', is_flag=True, help='Verbose logging')
 def send(device, stream_name, groups, resolution, fps, preset, raw_input, list_devices, verbose):
@@ -116,9 +116,12 @@ def send(device, stream_name, groups, resolution, fps, preset, raw_input, list_d
     # Performance note
     if config.video.width >= 1920 and config.video.fps >= 30:
         perf_msg = f"\n[dim]Note: Sending raw frames at {config.video.resolution}@{config.video.fps}fps\n"
-        if not raw_input:
-            perf_msg += "If stuttering occurs, try: --raw-input (lower CPU)\n"
-        perf_msg += "Or reduce load with: --resolution 1280x720 or --fps 25[/dim]"
+        if raw_input:
+            perf_msg += "⚠ Raw YUYV at 1080p30 may not work (USB bandwidth limit)\n"
+            perf_msg += "Remove --raw-input flag for 1080p, or use --resolution 1280x720[/dim]"
+        else:
+            perf_msg += "If stuttering occurs, reduce resolution: --resolution 1280x720\n"
+            perf_msg += "Or lower framerate: --fps 25[/dim]"
         console.print(perf_msg)
     
     console.print("\n[yellow]Starting stream...[/yellow]")

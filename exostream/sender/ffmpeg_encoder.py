@@ -73,31 +73,33 @@ class FFmpegEncoder:
         # Choose input format based on use_raw_input flag
         if self.use_raw_input:
             # Raw YUYV input - no decoding needed, lower CPU
-            # Note: Not all cameras support YUYV at high resolutions
+            # Note: Most cameras only support YUYV at 720p30 or lower due to USB bandwidth
+            # 1080p30 YUYV requires ~120MB/s which exceeds USB 2.0 bandwidth
             cmd.extend([
                 "-input_format", "yuyv422",
                 "-video_size", f"{self.video_config.width}x{self.video_config.height}",
                 "-framerate", str(self.video_config.fps),
             ])
+            if self.video_config.width >= 1920 and self.video_config.fps >= 30:
+                logger.warning("YUYV at 1080p30 may not be supported - camera will likely reduce FPS")
+                logger.warning("For 1080p30, use MJPEG (remove --raw-input flag)")
         else:
-            # MJPEG input - requires decoding but widely supported
+            # MJPEG input - requires decoding but widely supported at high resolutions
             cmd.extend([
                 "-input_format", "mjpeg",
                 "-video_size", f"{self.video_config.width}x{self.video_config.height}",
                 "-framerate", str(self.video_config.fps),
             ])
         
-        # Buffer settings to reduce drops
+        # Input device
         cmd.extend([
-            "-buffer_size", "5M",  # Increase input buffer
-            "-thread_queue_size", "512",  # Larger thread queue
             "-i", self.device_path,
         ])
         
         # Performance optimizations for raw frame processing
         cmd.extend([
-            # Use all CPU cores for swscale (pixel format conversion)
-            "-threads", "4",
+            # Use multiple CPU cores for pixel format conversion
+            "-threads", "0",  # Auto-detect optimal thread count
             
             # Fast bilinear scaling (lower quality but faster)
             "-sws_flags", "fast_bilinear",
@@ -106,9 +108,10 @@ class FFmpegEncoder:
             "-vcodec", "wrapped_avframe",  # Pass raw frames to NDI
             "-pix_fmt", "uyvy422",  # NDI preferred pixel format
             
-            # Reduce latency
-            "-fflags", "nobuffer",
+            # Low latency flags
+            "-fflags", "nobuffer+flush_packets",
             "-flags", "low_delay",
+            "-max_delay", "0",
             
             "-f", "libndi_newtek",  # NDI output format
         ])
