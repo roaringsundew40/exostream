@@ -34,9 +34,10 @@ def cli():
 @click.option('--software-encoder', '-s', is_flag=True, help='Use software encoder (GStreamer x264enc)')
 @click.option('--use-ffmpeg', is_flag=True, help='Use FFmpeg instead of GStreamer (try hardware encoder first)')
 @click.option('--ffmpeg-software', is_flag=True, help='Use FFmpeg with software encoder')
+@click.option('--udp', is_flag=True, help='Use UDP instead of SRT (lower latency, recommended for local network)')
 @click.option('--list-devices', '-l', is_flag=True, help='List available video devices and exit')
 @click.option('--verbose', '-v', is_flag=True, help='Verbose logging')
-def send(device, port, resolution, fps, bitrate, preset, passphrase, software_encoder, use_ffmpeg, ffmpeg_software, list_devices, verbose):
+def send(device, port, resolution, fps, bitrate, preset, passphrase, software_encoder, use_ffmpeg, ffmpeg_software, udp, list_devices, verbose):
     """Start streaming from webcam"""
     
     # Setup logger
@@ -122,14 +123,15 @@ def send(device, port, resolution, fps, bitrate, preset, passphrase, software_en
     
     # Create and start encoder
     try:
-        if use_ffmpeg or ffmpeg_software:
+        if use_ffmpeg or ffmpeg_software or udp:
             # Use FFmpeg encoder
             encoder = FFmpegEncoder(
                 device_path=device,
                 video_config=config.video,
                 srt_config=config.srt,
                 on_error=lambda msg: console.print(f"[red]Error: {msg}[/red]"),
-                use_hardware=not ffmpeg_software  # Hardware unless --ffmpeg-software
+                use_hardware=not ffmpeg_software,  # Hardware unless --ffmpeg-software
+                use_udp=udp  # Use UDP if requested
             )
         else:
             # Use GStreamer encoder

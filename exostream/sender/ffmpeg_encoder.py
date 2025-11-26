@@ -20,7 +20,8 @@ class FFmpegEncoder:
         video_config: VideoConfig,
         srt_config: SRTConfig,
         on_error: Optional[Callable] = None,
-        use_hardware: bool = True
+        use_hardware: bool = True,
+        use_udp: bool = False
     ):
         """
         Initialize the FFmpeg encoder
@@ -28,25 +29,28 @@ class FFmpegEncoder:
         Args:
             device_path: Path to video device (e.g., /dev/video0)
             video_config: Video encoding configuration
-            srt_config: SRT streaming configuration
+            srt_config: SRT streaming configuration (port used for UDP too)
             on_error: Callback function for errors
             use_hardware: Use h264_v4l2m2m hardware encoder
+            use_udp: Use UDP instead of SRT (lower latency)
         """
         self.device_path = device_path
         self.video_config = video_config
         self.srt_config = srt_config
         self.on_error = on_error
         self.use_hardware = use_hardware
+        self.use_udp = use_udp
         
         self.process: Optional[subprocess.Popen] = None
         
         # Determine encoder
         self.encoder = "h264_v4l2m2m" if use_hardware else "libx264"
         
+        protocol = "UDP" if use_udp else "SRT"
         if use_hardware:
-            logger.info("Using FFmpeg with hardware encoder (h264_v4l2m2m)")
+            logger.info(f"Using FFmpeg with hardware encoder (h264_v4l2m2m) over {protocol}")
         else:
-            logger.info("Using FFmpeg with software encoder (libx264)")
+            logger.info(f"Using FFmpeg with software encoder (libx264) over {protocol}")
     
     def build_command(self) -> list:
         """
@@ -55,10 +59,17 @@ class FFmpegEncoder:
         Returns:
             List of command arguments
         """
-        srt_url = f"srt://0.0.0.0:{self.srt_config.port}?mode=listener&latency={self.srt_config.latency * 1000}"
-        
-        if self.srt_config.passphrase:
-            srt_url += f"&passphrase={self.srt_config.passphrase}"
+        # Build output URL based on protocol
+        if self.use_udp:
+            # UDP multicast or unicast
+            output_url = f"udp://0.0.0.0:{self.srt_config.port}"
+        else:
+            # SRT URL for listener mode - use simpler syntax
+            # Latency in microseconds (120ms = 120000µs)
+            output_url = f"srt://:{self.srt_config.port}?mode=listener&latency={self.srt_config.latency * 1000}"
+            
+            if self.srt_config.passphrase:
+                output_url += f"&passphrase={self.srt_config.passphrase}"
         
         cmd = [
             "ffmpeg",
@@ -104,11 +115,11 @@ class FFmpegEncoder:
                 ),
             ])
         
-        # Output format and optimization
-        # Try raw H.264 first - sometimes works better with SRT
+        # Output format - MPEG-TS is standard for streaming
         cmd.extend([
-            "-f", "h264",  # Raw H.264 stream
-            srt_url
+            "-f", "mpegts",  # MPEG-TS container
+            "-mpegts_flags", "latm",  # Low latency
+            output_url
         ])
         
         return cmd
