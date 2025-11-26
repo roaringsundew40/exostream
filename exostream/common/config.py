@@ -1,4 +1,4 @@
-"""Configuration management and presets"""
+"""Configuration management"""
 
 from dataclasses import dataclass
 from typing import Optional
@@ -41,24 +41,6 @@ class StreamConfig:
     video: VideoConfig
     ndi: NDIConfig
     device: str = "/dev/video0"
-    
-    @classmethod
-    def from_preset(cls, preset: str = "medium", stream_name: str = "Exostream"):
-        """Load configuration from preset"""
-        presets = {
-            "low": VideoConfig(width=1280, height=720, fps=30, bitrate=4000),
-            "medium": VideoConfig(width=1280, height=720, fps=30, bitrate=6000),
-            "high": VideoConfig(width=1920, height=1080, fps=30, bitrate=8000),
-            "ultra": VideoConfig(width=1920, height=1080, fps=30, bitrate=10000),
-        }
-        
-        if preset not in presets:
-            raise ValueError(f"Unknown preset: {preset}. Available: {list(presets.keys())}")
-        
-        return cls(
-            video=presets[preset],
-            ndi=NDIConfig(stream_name=stream_name)
-        )
     
     def save_to_file(self, filepath: Path):
         """Save configuration to YAML file"""

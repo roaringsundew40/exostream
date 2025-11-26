@@ -7,7 +7,6 @@ Stream webcam from Raspberry Pi using **NDI (Network Device Interface)** protoco
 - **NDI Streaming** - Industry-standard protocol for professional video over IP
 - **Automatic Discovery** - NDI streams are automatically discoverable on your network
 - **Raw Frame Streaming** - Option to send uncompressed frames; NDI handles compression internally
-- **Quality Presets** - Easy configuration with low/medium/high/ultra presets
 - **Flexible Input Formats** - Supports MJPEG (for high resolution) or YUYV (for lower CPU usage)
 - **NDI Groups** - Organize streams into groups for better network management
 - **Beautiful CLI** - Rich terminal interface with device detection
@@ -182,21 +181,6 @@ exostream send \
     --fps 30
 ```
 
-#### Using Quality Presets
-```bash
-# Low quality (720p30, 4Mbps)
-exostream send --name "MyCamera" --preset low
-
-# Medium quality (720p30, 6Mbps)
-exostream send --name "MyCamera" --preset medium
-
-# High quality (1080p30, 8Mbps)
-exostream send --name "MyCamera" --preset high
-
-# Ultra quality (1080p30, 10Mbps)
-exostream send --name "MyCamera" --preset ultra
-```
-
 #### Using Raw YUYV Input (Lower CPU)
 For 720p streaming, you can use raw YUYV input which reduces CPU usage but may cause more stuttering:
 ```bash
@@ -226,21 +210,9 @@ exostream send --name "MyCamera" --verbose
 | `--groups` | `-g` | None | NDI groups (comma-separated) |
 | `--resolution` | `-r` | `1920x1080` | Video resolution |
 | `--fps` | `-f` | `30` | Frames per second |
-| `--preset` | | | Quality preset (low/medium/high/ultra) |
 | `--raw-input` | | | Use raw YUYV input (works best at 720p) |
 | `--list-devices` | `-l` | | List available devices and exit |
 | `--verbose` | `-v` | | Enable verbose logging |
-
-### Quality Presets
-
-| Preset | Resolution | FPS | Bitrate* | Use Case |
-|--------|-----------|-----|----------|----------|
-| low | 1280x720 | 30 | 4 Mbps | Lower bandwidth, older hardware |
-| medium | 1280x720 | 30 | 6 Mbps | Balanced quality/performance |
-| high | 1920x1080 | 30 | 8 Mbps | High quality, good hardware |
-| ultra | 1920x1080 | 30 | 10 Mbps | Highest quality, best hardware |
-
-\* Note: NDI handles compression internally. The bitrate is a reference for the raw input quality.
 
 ## Understanding Raw Frame Streaming
 

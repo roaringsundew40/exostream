@@ -28,11 +28,10 @@ def cli():
 @click.option('--groups', '-g', default=None, help='NDI groups (comma-separated)')
 @click.option('--resolution', '-r', default='1920x1080', help='Video resolution (e.g., 1920x1080)')
 @click.option('--fps', '-f', default=30, type=int, help='Frames per second')
-@click.option('--preset', default=None, help='Quality preset (low, medium, high, ultra)')
 @click.option('--raw-input', is_flag=True, help='Use raw YUYV input instead of MJPEG (works best at 720p, not 1080p)')
 @click.option('--list-devices', '-l', is_flag=True, help='List available video devices and exit')
 @click.option('--verbose', '-v', is_flag=True, help='Verbose logging')
-def send(device, name, groups, resolution, fps, preset, raw_input, list_devices, verbose):
+def send(device, name, groups, resolution, fps, raw_input, list_devices, verbose):
     """Start streaming from webcam via NDI (NDI handles compression internally)"""
     
     # Setup logger
@@ -74,25 +73,19 @@ def send(device, name, groups, resolution, fps, preset, raw_input, list_devices,
     
     # Create configuration
     try:
-        if preset:
-            config = StreamConfig.from_preset(preset, stream_name=name)
-            config.device = device
-            if groups:
-                config.ndi.groups = groups
-        else:
-            video_config = VideoConfig.from_resolution_string(
-                resolution,
-                fps=fps
-            )
-            ndi_config = NDIConfig(
-                stream_name=name,
-                groups=groups
-            )
-            config = StreamConfig(
-                video=video_config,
-                ndi=ndi_config,
-                device=device
-            )
+        video_config = VideoConfig.from_resolution_string(
+            resolution,
+            fps=fps
+        )
+        ndi_config = NDIConfig(
+            stream_name=name,
+            groups=groups
+        )
+        config = StreamConfig(
+            video=video_config,
+            ndi=ndi_config,
+            device=device
+        )
     except Exception as e:
         console.print(f"[red]✗ Invalid configuration: {e}[/red]")
         sys.exit(1)
