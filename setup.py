@@ -5,9 +5,9 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="exostream",
-    version="0.1.0",
+    version="0.2.0",
     author="Naman",
-    description="Stream webcam from Raspberry Pi using GStreamer and SRT",
+    description="Stream webcam from Raspberry Pi using NDI",
     long_description=long_description,
     long_description_content_type="text/markdown",
     packages=find_packages(),
@@ -18,8 +18,8 @@ setup(
     ],
     python_requires=">=3.8",
     install_requires=[
-        # Note: PyGObject must be installed via system packages
-        # sudo apt-get install python3-gi python3-gi-cairo
+        # Note: FFmpeg with NDI support must be installed separately
+        # See README for installation instructions
         "rich>=13.0.0",
         "click>=8.0.0",
         "pyyaml>=6.0",

@@ -1,4 +1,4 @@
-"""FFmpeg-based encoder for hardware H.264 encoding"""
+"""FFmpeg-based encoder for NDI streaming"""
 
 import subprocess
 import signal
@@ -6,121 +6,129 @@ import sys
 import shlex
 from typing import Optional, Callable
 from exostream.common.logger import get_logger
-from exostream.common.config import VideoConfig, SRTConfig
+from exostream.common.config import VideoConfig, NDIConfig
 
 logger = get_logger(__name__)
 
 
 class FFmpegEncoder:
-    """Handles video encoding using FFmpeg with hardware acceleration"""
+    """Handles video encoding using FFmpeg with NDI output"""
     
     def __init__(
         self,
         device_path: str,
         video_config: VideoConfig,
-        srt_config: SRTConfig,
+        ndi_config: NDIConfig,
         on_error: Optional[Callable] = None,
         use_hardware: bool = True,
-        use_udp: bool = False
+        use_raw_input: bool = False
     ):
         """
-        Initialize the FFmpeg encoder
+        Initialize the FFmpeg encoder for NDI output
+        
+        Note: NDI handles compression internally, so we send raw frames.
+        The use_hardware parameter is kept for API compatibility but not used.
         
         Args:
             device_path: Path to video device (e.g., /dev/video0)
-            video_config: Video encoding configuration
-            srt_config: SRT streaming configuration (port used for UDP too)
+            video_config: Video encoding configuration (resolution, fps)
+            ndi_config: NDI streaming configuration
             on_error: Callback function for errors
-            use_hardware: Use h264_v4l2m2m hardware encoder
-            use_udp: Use UDP instead of SRT (lower latency)
+            use_hardware: Kept for compatibility, not used (NDI uses raw frames)
+            use_raw_input: Use raw YUYV input instead of MJPEG (lower CPU, if camera supports it)
         """
         self.device_path = device_path
         self.video_config = video_config
-        self.srt_config = srt_config
+        self.ndi_config = ndi_config
         self.on_error = on_error
         self.use_hardware = use_hardware
-        self.use_udp = use_udp
+        self.use_raw_input = use_raw_input
         
         self.process: Optional[subprocess.Popen] = None
         
-        # Determine encoder
-        self.encoder = "h264_v4l2m2m" if use_hardware else "libx264"
-        
-        protocol = "UDP" if use_udp else "SRT"
-        if use_hardware:
-            logger.info(f"Using FFmpeg with hardware encoder (h264_v4l2m2m) over {protocol}")
-        else:
-            logger.info(f"Using FFmpeg with software encoder (libx264) over {protocol}")
+        logger.info(f"Using FFmpeg with NDI output (raw frames)")
+        logger.info(f"NDI will handle compression internally")
+        if use_raw_input:
+            logger.info(f"Using raw YUYV input")
     
     def build_command(self) -> list:
         """
-        Build the FFmpeg command
+        Build the FFmpeg command for NDI output
+        
+        NDI requires raw uncompressed frames, not pre-encoded H.264.
+        We use the wrapped_avframe codec to pass raw frames to NDI.
         
         Returns:
             List of command arguments
         """
-        # Build output URL based on protocol
-        if self.use_udp:
-            # UDP multicast or unicast
-            output_url = f"udp://0.0.0.0:{self.srt_config.port}"
-        else:
-            # SRT URL for listener mode - use simpler syntax
-            # Latency in microseconds (120ms = 120000µs)
-            output_url = f"srt://:{self.srt_config.port}?mode=listener&latency={self.srt_config.latency * 1000}"
-            
-            if self.srt_config.passphrase:
-                output_url += f"&passphrase={self.srt_config.passphrase}"
-        
         cmd = [
             "ffmpeg",
             "-hide_banner",
             "-loglevel", "info",
             
-            # Input from V4L2 device (MJPEG from Logitech camera)
+            # Input from V4L2 device
             "-f", "v4l2",
-            "-input_format", "mjpeg",
-            "-video_size", f"{self.video_config.width}x{self.video_config.height}",
-            "-framerate", str(self.video_config.fps),
-            "-i", self.device_path,
         ]
         
-        # Encoder-specific settings
-        if self.use_hardware:
-            # Hardware encoder (h264_v4l2m2m)
-            # CRITICAL: Hardware encoder requires yuv420p pixel format
+        # Choose input format based on use_raw_input flag
+        if self.use_raw_input:
+            # Raw YUYV input - no decoding needed, lower CPU
+            # Note: Most cameras only support YUYV at 720p30 or lower due to USB bandwidth
+            # 1080p30 YUYV requires ~120MB/s which exceeds USB 2.0 bandwidth
             cmd.extend([
-                "-pix_fmt", "yuv420p",  # Convert from yuvj422p (MJPEG) to yuv420p
-                "-c:v", "h264_v4l2m2m",
-                "-b:v", f"{self.video_config.bitrate}k",
-                "-g", str(self.video_config.fps * 2),  # Keyframe every 2 seconds
-                # Don't set profile - h264_v4l2m2m handles this automatically
-                # Don't set maxrate/bufsize - can cause issues with hardware encoder
-                # Don't set bf - hardware encoder decides this
+                "-input_format", "yuyv422",
+                "-video_size", f"{self.video_config.width}x{self.video_config.height}",
+                "-framerate", str(self.video_config.fps),
             ])
+            if self.video_config.width >= 1920 and self.video_config.fps >= 30:
+                logger.warning("YUYV at 1080p30 may not be supported - camera will likely reduce FPS")
+                logger.warning("For 1080p30, use MJPEG (remove --raw-input flag)")
         else:
-            # Software encoder (libx264)
+            # MJPEG input - requires decoding but widely supported at high resolutions
             cmd.extend([
-                "-c:v", "libx264",
-                "-b:v", f"{self.video_config.bitrate}k",
-                "-maxrate", f"{self.video_config.bitrate}k",
-                "-bufsize", f"{self.video_config.bitrate * 2}k",
-                "-preset", "veryfast",
-                "-tune", "zerolatency",
-                "-g", str(self.video_config.fps * 2),
-                "-bf", "0",
-                "-profile:v", "baseline",
-                "-x264-params", "keyint=%d:min-keyint=%d:scenecut=0" % (
-                    self.video_config.fps * 2,
-                    self.video_config.fps
-                ),
+                "-input_format", "mjpeg",
+                "-video_size", f"{self.video_config.width}x{self.video_config.height}",
+                "-framerate", str(self.video_config.fps),
             ])
         
-        # Output format - MPEG-TS is standard for streaming
+        # Input device
         cmd.extend([
-            "-f", "mpegts",  # MPEG-TS container
-            "-mpegts_flags", "latm",  # Low latency
-            output_url
+            "-i", self.device_path,
         ])
+        
+        # Performance optimizations for raw frame processing
+        cmd.extend([
+            # Use multiple CPU cores for pixel format conversion
+            "-threads", "0",  # Auto-detect optimal thread count
+            
+            # Fast bilinear scaling (lower quality but faster)
+            "-sws_flags", "fast_bilinear",
+            
+            # NDI raw frame output
+            "-vcodec", "wrapped_avframe",  # Pass raw frames to NDI
+            "-pix_fmt", "uyvy422",  # NDI preferred pixel format
+            
+            # Low latency flags
+            "-fflags", "nobuffer+flush_packets",
+            "-flags", "low_delay",
+            "-max_delay", "0",
+            
+            "-f", "libndi_newtek",  # NDI output format
+        ])
+        
+        # Add NDI-specific options
+        if self.ndi_config.groups:
+            cmd.extend(["-groups", self.ndi_config.groups])
+        
+        if self.ndi_config.clock_video:
+            cmd.extend(["-clock_video", "true"])
+        
+        if self.ndi_config.clock_audio:
+            cmd.extend(["-clock_audio", "true"])
+        
+        # NDI output URL
+        output_url = f"{self.ndi_config.stream_name}"
+        cmd.append(output_url)
         
         return cmd
     
@@ -142,7 +150,9 @@ class FFmpegEncoder:
             )
             
             logger.info(f"FFmpeg encoder started (PID: {self.process.pid})")
-            logger.info(f"Stream is available at: srt://0.0.0.0:{self.srt_config.port}")
+            logger.info(f"NDI stream name: {self.ndi_config.stream_name}")
+            if self.ndi_config.groups:
+                logger.info(f"NDI groups: {self.ndi_config.groups}")
             logger.info(f"Full command: {' '.join(cmd)}")
             
             # Monitor stderr in real-time
@@ -212,12 +222,13 @@ class FFmpegEncoder:
             Dictionary with statistics
         """
         stats = {
-            'bitrate': self.video_config.bitrate,
             'resolution': self.video_config.resolution,
             'fps': self.video_config.fps,
-            'encoder': self.encoder,
             'device': self.device_path,
+            'protocol': 'ndi',
+            'stream_name': self.ndi_config.stream_name,
             'backend': 'ffmpeg',
+            'codec': 'wrapped_avframe (raw frames)',
         }
         
         return stats

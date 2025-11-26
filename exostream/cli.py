@@ -5,9 +5,9 @@ from exostream.sender.cli import send
 
 
 @click.group()
-@click.version_option(version="0.1.0")
+@click.version_option(version="0.2.0")
 def main():
-    """ExoStream - Stream webcam from Raspberry Pi using GStreamer and SRT"""
+    """ExoStream - Stream webcam from Raspberry Pi using NDI"""
     pass
 
 

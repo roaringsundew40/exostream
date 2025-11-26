@@ -84,6 +84,16 @@ def check_srt_support() -> bool:
     return check_gst_element('srtsink') and check_gst_element('srtsrc')
 
 
+def check_ndi_support() -> bool:
+    """
+    Check if NDI support is available in GStreamer
+    
+    Returns:
+        True if NDI plugin is available, False otherwise
+    """
+    return check_gst_element('ndisink') and check_gst_element('ndisrc')
+
+
 def get_device_capabilities(device_path: str) -> dict:
     """
     Get video device capabilities using GStreamer
