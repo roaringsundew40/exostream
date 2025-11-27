@@ -5,8 +5,9 @@ import sys
 import signal
 import logging
 import time
+import socket
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from exostream.daemon.ipc_server import IPCServerManager
 from exostream.daemon.tcp_server import TCPServerManager
@@ -26,6 +27,7 @@ from exostream.common.protocol import (
     UpdateSettingsParams
 )
 from exostream.common.config import NetworkConfig
+from exostream.common.discovery import ExostreamServicePublisher
 from exostream.common.logger import setup_logger, get_logger
 
 # Version
@@ -67,6 +69,14 @@ class ExostreamDaemon:
         # TCP server for network control (optional)
         self.network_config = network_config or NetworkConfig()
         self.tcp_server = TCPServerManager(self.network_config)
+        
+        # Service discovery for automatic network detection
+        self.service_publisher: Optional[ExostreamServicePublisher] = None
+        if self.network_config.enabled:
+            self.service_publisher = ExostreamServicePublisher(
+                port=self.network_config.port,
+                name=socket.gethostname()
+            )
         
         self._running = False
         self._setup_signal_handlers()
@@ -456,6 +466,16 @@ class ExostreamDaemon:
             try:
                 self.tcp_server.start()
                 logger.info(f"TCP server listening on {self.network_config.host}:{self.network_config.port}")
+                
+                # Start service discovery/advertising
+                if self.service_publisher:
+                    try:
+                        self.service_publisher.start()
+                        logger.info("Service discovery enabled - daemon is discoverable on network")
+                    except Exception as e:
+                        logger.error(f"Failed to start service discovery: {e}")
+                        logger.warning("Daemon will be accessible but not discoverable")
+                        
             except Exception as e:
                 logger.error(f"Failed to start TCP server: {e}")
                 logger.warning("Daemon will continue without network control")
@@ -500,6 +520,13 @@ class ExostreamDaemon:
                 self.tcp_server.stop()
             except Exception as e:
                 logger.error(f"Error stopping TCP server: {e}")
+            
+            # Stop service discovery
+            if self.service_publisher:
+                try:
+                    self.service_publisher.stop()
+                except Exception as e:
+                    logger.error(f"Error stopping service discovery: {e}")
         
         # Cleanup
         try:

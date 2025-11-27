@@ -24,6 +24,7 @@ from exostream.cli.network_client import (
     NetworkTimeoutError,
     NetworkRPCError
 )
+from exostream.common.discovery import ExostreamServiceDiscovery
 
 
 class ExostreamGUI:
@@ -40,6 +41,11 @@ class ExostreamGUI:
         self.host = tk.StringVar(value="localhost")
         self.port = tk.StringVar(value="9023")
         
+        # Service discovery
+        self.discovery: Optional[ExostreamServiceDiscovery] = None
+        self.discovered_services = {}
+        self.discovering = False
+        
         # Status refresh
         self.auto_refresh = tk.BooleanVar(value=True)
         self.refresh_interval = 2000  # ms
@@ -51,6 +57,9 @@ class ExostreamGUI:
         # Build UI
         self._create_widgets()
         self._setup_styles()
+        
+        # Setup cleanup on close
+        self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
         
         # Start message processing
         self._process_messages()
@@ -97,25 +106,51 @@ class ExostreamGUI:
         frame.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
         frame.columnconfigure(1, weight=1)
         
+        # Discovery section
+        discovery_frame = ttk.Frame(frame)
+        discovery_frame.grid(row=0, column=0, columnspan=7, sticky=(tk.W, tk.E), pady=(0, 10))
+        
+        ttk.Label(discovery_frame, text="Discovered Cameras:").pack(side=tk.LEFT, padx=(0, 5))
+        
+        # Discovered cameras dropdown
+        self.discovered_combo = ttk.Combobox(discovery_frame, width=40, state='readonly')
+        self.discovered_combo.pack(side=tk.LEFT, padx=(0, 5))
+        self.discovered_combo.bind('<<ComboboxSelected>>', self._on_discovered_selected)
+        
+        # Discover button
+        self.discover_btn = ttk.Button(discovery_frame, text="🔍 Discover", command=self._toggle_discovery)
+        self.discover_btn.pack(side=tk.LEFT, padx=(0, 5))
+        
+        # Discovery status
+        self.discovery_status = ttk.Label(discovery_frame, text="")
+        self.discovery_status.pack(side=tk.LEFT, padx=(5, 0))
+        
+        # Manual connection section
+        manual_frame = ttk.Frame(frame)
+        manual_frame.grid(row=1, column=0, columnspan=7, sticky=(tk.W, tk.E))
+        manual_frame.columnconfigure(1, weight=1)
+        
+        ttk.Label(manual_frame, text="Manual Connection:").grid(row=0, column=0, columnspan=4, sticky=tk.W, pady=(5, 5))
+        
         # Host
-        ttk.Label(frame, text="Host:").grid(row=0, column=0, sticky=tk.W, padx=(0, 5))
-        ttk.Entry(frame, textvariable=self.host, width=20).grid(row=0, column=1, sticky=(tk.W, tk.E), padx=(0, 10))
+        ttk.Label(manual_frame, text="Host:").grid(row=1, column=0, sticky=tk.W, padx=(0, 5))
+        ttk.Entry(manual_frame, textvariable=self.host, width=20).grid(row=1, column=1, sticky=(tk.W, tk.E), padx=(0, 10))
         
         # Port
-        ttk.Label(frame, text="Port:").grid(row=0, column=2, sticky=tk.W, padx=(0, 5))
-        ttk.Entry(frame, textvariable=self.port, width=8).grid(row=0, column=3, sticky=tk.W, padx=(0, 10))
+        ttk.Label(manual_frame, text="Port:").grid(row=1, column=2, sticky=tk.W, padx=(0, 5))
+        ttk.Entry(manual_frame, textvariable=self.port, width=8).grid(row=1, column=3, sticky=tk.W, padx=(0, 10))
         
         # Connect button
-        self.connect_btn = ttk.Button(frame, text="Connect", command=self._connect)
-        self.connect_btn.grid(row=0, column=4, padx=(0, 5))
+        self.connect_btn = ttk.Button(manual_frame, text="Connect", command=self._connect)
+        self.connect_btn.grid(row=1, column=4, padx=(0, 5))
         
         # Disconnect button
-        self.disconnect_btn = ttk.Button(frame, text="Disconnect", command=self._disconnect, state=tk.DISABLED)
-        self.disconnect_btn.grid(row=0, column=5)
+        self.disconnect_btn = ttk.Button(manual_frame, text="Disconnect", command=self._disconnect, state=tk.DISABLED)
+        self.disconnect_btn.grid(row=1, column=5)
         
         # Connection status
-        self.conn_status_label = ttk.Label(frame, text="● Not Connected", style='Disconnected.TLabel')
-        self.conn_status_label.grid(row=0, column=6, padx=(20, 0))
+        self.conn_status_label = ttk.Label(manual_frame, text="● Not Connected", style='Disconnected.TLabel')
+        self.conn_status_label.grid(row=1, column=6, padx=(20, 0))
         
     def _create_status_frame(self, parent):
         """Create status display"""
@@ -267,6 +302,18 @@ class ExostreamGUI:
         """Clear the log"""
         self.log_text.delete('1.0', tk.END)
         self._log("Log cleared")
+    
+    def _on_closing(self):
+        """Called when window is closing"""
+        # Stop discovery if running
+        if self.discovering and self.discovery:
+            try:
+                self.discovery.stop()
+            except:
+                pass
+        
+        # Close window
+        self.root.destroy()
         
     def _connect(self):
         """Connect to daemon"""
@@ -311,6 +358,64 @@ class ExostreamGUI:
             self.refresh_job = None
         
         self._log("Disconnected")
+    
+    def _toggle_discovery(self):
+        """Toggle service discovery"""
+        if not self.discovering:
+            self._start_discovery()
+        else:
+            self._stop_discovery()
+    
+    def _start_discovery(self):
+        """Start discovering Exostream services on the network"""
+        self._log("Starting network discovery...")
+        self.discovering = True
+        self.discover_btn.config(text="⏹ Stop Discovery")
+        self.discovery_status.config(text="🔍 Discovering...")
+        
+        # Clear discovered services
+        self.discovered_services.clear()
+        self.discovered_combo.set('')
+        self.discovered_combo.config(values=[])
+        
+        def discovery_thread():
+            try:
+                self.discovery = ExostreamServiceDiscovery(callback=self._on_service_discovered)
+                self.discovery.start()
+                self.message_queue.put(('discovery_started', None))
+            except Exception as e:
+                self.message_queue.put(('discovery_error', str(e)))
+        
+        threading.Thread(target=discovery_thread, daemon=True).start()
+    
+    def _stop_discovery(self):
+        """Stop service discovery"""
+        self._log("Stopping network discovery")
+        self.discovering = False
+        self.discover_btn.config(text="🔍 Discover")
+        self.discovery_status.config(text="")
+        
+        if self.discovery:
+            try:
+                self.discovery.stop()
+            except Exception as e:
+                self._log(f"Error stopping discovery: {e}", "ERROR")
+            finally:
+                self.discovery = None
+    
+    def _on_service_discovered(self, event_type: str, data):
+        """Called when a service is discovered/removed"""
+        self.message_queue.put(('service_event', {'event': event_type, 'data': data}))
+    
+    def _on_discovered_selected(self, event):
+        """Called when user selects a discovered camera"""
+        selection = self.discovered_combo.get()
+        if selection and selection in self.discovered_services:
+            service = self.discovered_services[selection]
+            # Update host and port
+            self.host.set(service['host'])
+            self.port.set(str(service['port']))
+            self._log(f"Selected: {service['name']} at {service['host']}:{service['port']}")
         
     def _on_connected(self):
         """Handle successful connection"""
@@ -600,12 +705,90 @@ class ExostreamGUI:
                 elif msg_type == 'stop_error':
                     self._log(f"Stop error: {msg_data}", "ERROR")
                     messagebox.showerror("Error", f"Failed to stop stream: {msg_data}")
+                elif msg_type == 'discovery_started':
+                    self._log("Discovery started - searching for cameras...")
+                elif msg_type == 'discovery_error':
+                    self._log(f"Discovery error: {msg_data}", "ERROR")
+                    self.discovering = False
+                    self.discover_btn.config(text="🔍 Discover")
+                    self.discovery_status.config(text="")
+                    messagebox.showerror("Discovery Error", f"Failed to start discovery: {msg_data}")
+                elif msg_type == 'service_event':
+                    self._handle_service_event(msg_data)
                     
         except queue.Empty:
             pass
         
         # Schedule next check
         self.root.after(100, self._process_messages)
+    
+    def _handle_service_event(self, data: Dict):
+        """Handle service discovery events"""
+        event_type = data.get('event')
+        service_data = data.get('data')
+        
+        if event_type == 'added':
+            # Add service to our list
+            name = service_data.name.replace('._exostream._tcp.local.', '')
+            
+            # Get IP address
+            import socket
+            addresses = [socket.inet_ntoa(addr) for addr in service_data.addresses]
+            host = addresses[0] if addresses else "unknown"
+            
+            # Get properties
+            properties = {
+                key.decode('utf-8') if isinstance(key, bytes) else key:
+                val.decode('utf-8') if isinstance(val, bytes) else val
+                for key, val in service_data.properties.items()
+            }
+            
+            display_name = f"{name} ({host}:{service_data.port})"
+            
+            self.discovered_services[display_name] = {
+                'name': name,
+                'host': host,
+                'port': service_data.port,
+                'hostname': properties.get('hostname', 'unknown'),
+                'version': properties.get('version', 'unknown')
+            }
+            
+            # Update combo box
+            values = list(self.discovered_services.keys())
+            self.discovered_combo.config(values=values)
+            
+            # Update status
+            count = len(self.discovered_services)
+            self.discovery_status.config(text=f"✓ Found {count} camera{'s' if count != 1 else ''}")
+            
+            self._log(f"Discovered: {name} at {host}:{service_data.port}")
+            
+        elif event_type == 'removed':
+            # Remove service from our list
+            service_name = service_data.replace('._exostream._tcp.local.', '')
+            
+            # Find and remove from dict
+            to_remove = None
+            for display_name, info in self.discovered_services.items():
+                if info['name'] == service_name:
+                    to_remove = display_name
+                    break
+            
+            if to_remove:
+                del self.discovered_services[to_remove]
+                
+                # Update combo box
+                values = list(self.discovered_services.keys())
+                self.discovered_combo.config(values=values)
+                
+                # Update status
+                count = len(self.discovered_services)
+                if count > 0:
+                    self.discovery_status.config(text=f"✓ Found {count} camera{'s' if count != 1 else ''}")
+                else:
+                    self.discovery_status.config(text="🔍 Discovering...")
+                
+                self._log(f"Lost: {service_name}")
 
 
 def main():
