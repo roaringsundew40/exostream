@@ -303,6 +303,9 @@ exostream stop
 
 # 6. Stop daemon (when done)
 exostream daemon stop
+
+# Test installation
+exostream test
 ```
 
 ### Daemon Management
@@ -378,6 +381,59 @@ Output shows:
 - 🟢 FREE devices (available)
 - 🔴 IN USE devices (currently streaming)
 - Device path, name, and index
+
+---
+
+## Testing
+
+### Run All Tests
+
+Verify your installation with a single command:
+
+```bash
+exostream test
+```
+
+**Output:**
+```
+╭────────────────────────────╮
+│ Running Exostream Tests    │
+╰────────────────────────────╯
+
+╭─────────────────┬───────╮
+│ Category        │ Count │
+├─────────────────┼───────┤
+│ Total Tests     │    42 │
+│ Passed          │    42 │
+╰─────────────────┴───────╯
+
+╭─ Success ──────────────────╮
+│ ✓ All tests passed!        │
+│ 42/42 tests successful     │
+╰────────────────────────────╯
+```
+
+### Verbose Output
+
+See detailed test results:
+
+```bash
+exostream test --verbose
+```
+
+Shows each test name, status, and error messages.
+
+### When to Test
+
+- ✅ **After installation** - Verify everything works
+- ✅ **After updates** - Ensure nothing broke
+- ✅ **Before deployment** - Final verification
+- ✅ **When reporting bugs** - Attach test results
+
+See [TESTING.md](TESTING.md) for complete testing guide.
+
+---
+
 ## Architecture
 
 Exostream v0.3.0 uses a modern service-based architecture:

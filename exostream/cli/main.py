@@ -586,6 +586,97 @@ def daemon_ping(socket):
         sys.exit(1)
 
 
+@cli.command()
+@click.option('--verbose', '-v', is_flag=True, help='Show detailed test output')
+def test(verbose):
+    """Run all Exostream tests"""
+    from exostream.testing import run_tests
+    
+    console.print()
+    console.print(Panel.fit(
+        "[bold cyan]Running Exostream Tests[/bold cyan]",
+        border_style="cyan"
+    ))
+    console.print()
+    
+    # Run tests
+    with console.status("[yellow]Running tests...[/yellow]", spinner="dots"):
+        success, results = run_tests(verbose=verbose)
+    
+    # Display results
+    total = results['total']
+    passed = results['passed']
+    failed = results['failed']
+    errors = results['errors']
+    skipped = results['skipped']
+    
+    # Create summary table
+    table = Table(show_header=True, header_style="bold cyan", box=box.ROUNDED)
+    table.add_column("Category", style="cyan")
+    table.add_column("Count", justify="right")
+    
+    table.add_row("Total Tests", str(total))
+    table.add_row("Passed", f"[green]{passed}[/green]")
+    
+    if failed > 0:
+        table.add_row("Failed", f"[red]{failed}[/red]")
+    if errors > 0:
+        table.add_row("Errors", f"[red]{errors}[/red]")
+    if skipped > 0:
+        table.add_row("Skipped", f"[yellow]{skipped}[/yellow]")
+    
+    console.print(table)
+    console.print()
+    
+    # Show detailed results if verbose
+    if verbose and results.get('test_results'):
+        console.print("[bold]Test Details:[/bold]")
+        console.print()
+        
+        for test_name, status, message in results['test_results']:
+            if status == 'PASS':
+                console.print(f"  [green]✓[/green] {test_name}")
+            elif status == 'FAIL':
+                console.print(f"  [red]✗[/red] {test_name}")
+                if message:
+                    console.print(f"    [dim]{message[:100]}...[/dim]" if len(message) > 100 else f"    [dim]{message}[/dim]")
+            elif status == 'ERROR':
+                console.print(f"  [red]✗[/red] {test_name} [red](ERROR)[/red]")
+                if message:
+                    console.print(f"    [dim]{message[:100]}...[/dim]" if len(message) > 100 else f"    [dim]{message}[/dim]")
+            elif status == 'SKIP':
+                console.print(f"  [yellow]-[/yellow] {test_name} [yellow](SKIPPED)[/yellow]")
+        
+        console.print()
+    
+    # Final result
+    if success:
+        console.print(Panel(
+            f"[bold green]✓ All tests passed![/bold green]\n\n"
+            f"{passed}/{total} tests successful",
+            title="Success",
+            border_style="green"
+        ))
+        console.print()
+        sys.exit(0)
+    else:
+        console.print(Panel(
+            f"[bold red]✗ Tests failed[/bold red]\n\n"
+            f"Passed: {passed}/{total}\n"
+            f"Failed: {failed}\n"
+            f"Errors: {errors}",
+            title="Failed",
+            border_style="red"
+        ))
+        console.print()
+        
+        if not verbose:
+            console.print("[dim]Run with [cyan]--verbose[/cyan] to see detailed output[/dim]")
+            console.print()
+        
+        sys.exit(1)
+
+
 def format_uptime(seconds: float) -> str:
     """Format uptime in human-readable form"""
     if seconds < 60:
