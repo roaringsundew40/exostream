@@ -11,6 +11,9 @@
 
 set -e  # Exit on error
 
+# Get the directory where the script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # Parse arguments
 AUTO_MODE=0
 SKIP_FFMPEG_ARG=0
@@ -338,6 +341,7 @@ fi
 print_header "Step 3: Install Exostream"
 
 print_step "Installing Python dependencies..."
+cd "$SCRIPT_DIR"
 pip3 install -e . --user --break-system-packages
 
 print_success "Exostream package installed"
