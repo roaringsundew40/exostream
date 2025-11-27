@@ -165,9 +165,10 @@ This uses the [lplassman/FFMPEG-NDI repository](https://github.com/lplassman/FFM
    git checkout n5.1
    ```
 
-3. **Apply generic git email (required for patching):**
+3. **Apply generic git email and name (required for patching):**
    ```bash
    git config user.email "you@example.com"
+   git config user.name "You"
    ```
 
 4. **Apply the NDI patch to restore NDI support:**
