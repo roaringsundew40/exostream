@@ -537,9 +537,9 @@ def main():
         help="Verbose logging"
     )
     parser.add_argument(
-        "--network-control",
+        "--disable-network-control",
         action="store_true",
-        help="Enable network control (TCP server)"
+        help="Disable network control (TCP server is enabled by default)"
     )
     parser.add_argument(
         "--network-port",
@@ -569,15 +569,17 @@ def main():
     if args.state_dir:
         logger.info(f"State directory: {args.state_dir}")
     
-    # Create network config
+    # Create network config (enabled by default, disabled with flag)
     network_config = NetworkConfig(
-        enabled=args.network_control,
+        enabled=not args.disable_network_control,
         host=args.network_host,
         port=args.network_port
     )
     
     if network_config.enabled:
         logger.info(f"Network control enabled on {network_config.host}:{network_config.port}")
+    else:
+        logger.info("Network control disabled")
     
     # Create and start daemon
     try:

@@ -38,7 +38,7 @@ class NDIConfig:
 @dataclass
 class NetworkConfig:
     """Network control configuration"""
-    enabled: bool = False  # Disabled by default for security
+    enabled: bool = True  # Enabled by default
     host: str = "0.0.0.0"  # Listen on all interfaces
     port: int = 9023  # Default control port
     

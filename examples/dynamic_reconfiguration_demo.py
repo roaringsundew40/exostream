@@ -6,8 +6,8 @@ This demonstrates how settings can be changed on a live stream
 with minimal downtime and automatic rollback on failure.
 
 Usage:
-    # Start daemon with network control
-    exostreamd --network-control --verbose
+    # Start daemon (network control enabled by default)
+    exostreamd --verbose
 
     # Run demo (will start/stop stream automatically)
     python3 dynamic_reconfiguration_demo.py

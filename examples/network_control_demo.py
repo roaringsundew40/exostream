@@ -208,8 +208,10 @@ def main():
         console.print()
         console.print(Panel(
             "[red]Could not connect to daemon[/red]\n\n"
-            "Make sure the daemon is running with network control enabled:\n"
-            f"  [cyan]exostreamd --network-control --network-port {args.port}[/cyan]",
+            "Make sure the daemon is running (network control is enabled by default):\n"
+            f"  [cyan]exostreamd --network-port {args.port}[/cyan]\n\n"
+            "Or check if network control was disabled:\n"
+            "  [dim]Remove --disable-network-control flag if present[/dim]",
             title="Connection Failed",
             border_style="red"
         ))
