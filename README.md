@@ -9,19 +9,19 @@
 
 Stream webcam video over **NDI (Network Device Interface)** using FFmpeg, with a beautiful CLI and background daemon service.
 
-**✨ One-command installation • Background service • Beautiful CLI • Production ready**
+**One-command installation • Background service • Beautiful CLI • Production ready**
 
-## ✨ What's New in v0.3.0
+## What's New in v0.3.0
 
 **Complete architectural rewrite!** Exostream now features:
 
-- 🚀 **Background Daemon** - Runs as a service, no terminal required
-- 🎨 **Beautiful CLI** - Rich terminal UI with colors, tables, and panels
-- 🔌 **IPC Communication** - Client-server architecture via Unix sockets
-- 💾 **State Persistence** - Configuration and status survive restarts
-- 🔄 **Multiple Clients** - Control from multiple terminals simultaneously
-- 🧪 **Fully Tested** - 42 comprehensive tests, 100% passing
-- 📚 **Complete Documentation** - Extensive guides and examples
+- **Background Daemon** - Runs as a service, no terminal required
+- **Beautiful CLI** - Rich terminal UI with colors, tables, and panels
+- **IPC Communication** - Client-server architecture via Unix sockets
+- **State Persistence** - Configuration and status survive restarts
+- **Multiple Clients** - Control from multiple terminals simultaneously
+- **Fully Tested** - 42 comprehensive tests, 100% passing
+- **Complete Documentation** - Extensive guides and examples
 
 ## Features
 
@@ -83,13 +83,13 @@ cd exostream
 
 **That's it!** The script handles **everything automatically**:
 
-✅ Installs Python, Git, and build tools  
-✅ Compiles FFmpeg with NDI support (~30-60 min)  
-✅ Installs NDI SDK for your Raspberry Pi  
-✅ Installs Exostream package  
-✅ Configures PATH in ~/.bashrc  
-✅ Sets up camera permissions  
-✅ Verifies complete installation  
+Installs Python, Git, and build tools  
+Compiles FFmpeg with NDI support (~30-60 min)  
+Installs NDI SDK for your Raspberry Pi  
+Installs Exostream package  
+Configures PATH in ~/.bashrc  
+Sets up camera permissions  
+Verifies complete installation  
 
 **After installation, use from anywhere:**
 ```bash
@@ -229,15 +229,15 @@ This uses the [lplassman/FFMPEG-NDI repository](https://github.com/lplassman/FFM
 
 ### 2. Install Exostream
 
-**🚀 Automated Install (Recommended):**
+**Automated Install (Recommended):**
 
 The installation script handles **everything** automatically:
-- ✅ Installs system dependencies (Python, Git, build tools)
-- ✅ Compiles FFmpeg with NDI support (optional, ~30-60 min)
-- ✅ Installs Exostream package
-- ✅ Configures PATH automatically
-- ✅ Sets up video group permissions
-- ✅ Verifies complete installation
+- Installs system dependencies (Python, Git, build tools)
+- Compiles FFmpeg with NDI support (optional, ~30-60 min)
+- Installs Exostream package
+- Configures PATH automatically
+- Sets up video group permissions
+- Verifies complete installation
 
 ```bash
 git clone https://github.com/roaringsundew40/exostream
@@ -426,10 +426,10 @@ Shows each test name, status, and error messages.
 
 ### When to Test
 
-- ✅ **After installation** - Verify everything works
-- ✅ **After updates** - Ensure nothing broke
-- ✅ **Before deployment** - Final verification
-- ✅ **When reporting bugs** - Attach test results
+- **After installation** - Verify everything works
+- **After updates** - Ensure nothing broke
+- **Before deployment** - Final verification
+- **When reporting bugs** - Attach test results
 
 See [TESTING.md](TESTING.md) for complete testing guide.
 
@@ -462,11 +462,11 @@ Exostream v0.3.0 uses a modern service-based architecture:
 ```
 
 **Benefits:**
-- ✅ No terminal blocking - daemon runs in background
-- ✅ Control from anywhere - multiple clients can connect
-- ✅ State persistence - configuration survives restarts
-- ✅ Clean separation - CLI, service, and encoding layers isolated
-- ✅ Easy to automate - systemd-ready architecture
+- No terminal blocking - daemon runs in background
+- Control from anywhere - multiple clients can connect
+- State persistence - configuration survives restarts
+- Clean separation - CLI, service, and encoding layers isolated
+- Easy to automate - systemd-ready architecture
 
 ## Configuration Options
 
@@ -501,17 +501,17 @@ Unlike traditional streaming that pre-encodes video to H.264:
 ### Input Format Notes
 
 **MJPEG Input (Default)**:
-- ✅ Supports high resolutions (1080p30)
-- ✅ Widely supported by cameras
-- ⚠️  Requires JPEG decoding (moderate CPU usage)
-- 📝 Recommended for 1080p streaming
+- Supports high resolutions (1080p30)
+- Widely supported by cameras
+- Requires JPEG decoding (moderate CPU usage)
+- Recommended for 1080p streaming
 
 **YUYV Raw Input (--raw-input flag)**:
-- ✅ No decoding needed (lower CPU usage)
-- ✅ Best performance at 720p
-- ❌ USB bandwidth limited (1080p30 = ~120MB/s, exceeds USB 2.0)
-- ❌ Many cameras don't support YUYV at 1080p30
-- 📝 Recommended for 720p streaming only
+- No decoding needed (lower CPU usage)
+- Best performance at 720p
+- USB bandwidth limited (1080p30 = ~120MB/s, exceeds USB 2.0)
+- Many cameras don't support YUYV at 1080p30
+- Recommended for 720p streaming only
 
 ## Performance & Bandwidth
 
@@ -679,7 +679,7 @@ Exostream includes comprehensive documentation:
 python3 -m unittest discover tests -v
 ```
 
-Expected: 42/42 tests passing ✅
+Expected: 42/42 tests passing 
 
 **Individual test suites:**
 ```bash
