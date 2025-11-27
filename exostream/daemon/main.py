@@ -372,20 +372,17 @@ class ExostreamDaemon:
             # Check if currently streaming
             was_streaming = self.streaming_service.is_streaming()
             
-            # If streaming and restart is requested, stop and restart with new settings
+            # If streaming and restart is requested, use graceful restart
             if was_streaming and update_params.restart_if_streaming:
                 logger.info("Restarting stream with new settings...")
                 
-                # Stop current stream
-                self.streaming_service.stop_streaming()
-                
-                # Start with new settings
-                result = self.streaming_service.start_streaming(
+                # Use graceful restart (includes rollback on failure)
+                result = self.streaming_service.restart_streaming(
                     device=new_settings['device'],
-                    name=new_settings.get('name') or 'exostream',
+                    name=new_settings.get('name'),
                     resolution=new_settings['resolution'],
                     fps=new_settings['fps'],
-                    raw_input=new_settings.get('raw_input', False),
+                    raw_input=new_settings.get('raw_input'),
                     groups=new_settings.get('groups')
                 )
                 
