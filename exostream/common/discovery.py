@@ -49,11 +49,11 @@ class ExostreamServicePublisher:
             # Create service info
             service_name = f"{self.name}.{EXOSTREAM_SERVICE_TYPE}"
             
-            # Service properties (metadata)
+            # Service properties (metadata) - must be bytes
             properties = {
-                'version': '0.4.0',
-                'type': 'exostream-daemon',
-                'hostname': hostname
+                b'version': b'0.4.0',
+                b'type': b'exostream-daemon',
+                b'hostname': hostname.encode('utf-8')
             }
             
             self.service_info = ServiceInfo(
@@ -70,9 +70,13 @@ class ExostreamServicePublisher:
             
             logger.info(f"Service published: {self.name} at {local_ip}:{self.port}")
             logger.info(f"Service name: {service_name}")
+            print(f"DEBUG: Service published: {service_name} at {local_ip}:{self.port}")
             
         except Exception as e:
             logger.error(f"Failed to publish service: {e}")
+            print(f"DEBUG ERROR: Failed to publish: {e}")
+            import traceback
+            traceback.print_exc()
             if self.zeroconf:
                 self.zeroconf.close()
                 self.zeroconf = None
@@ -110,11 +114,17 @@ class ExostreamServiceListener(ServiceListener):
         
     def add_service(self, zeroconf: Zeroconf, service_type: str, name: str):
         """Called when a service is discovered"""
-        logger.debug(f"Service added: {name}")
+        logger.info(f"Service added: {name}")
+        print(f"DEBUG: Service added: {name}")  # Debug output
         if self.callback:
             info = zeroconf.get_service_info(service_type, name)
             if info:
+                logger.info(f"Got service info for {name}: {info}")
+                print(f"DEBUG: Got service info: {info}")
                 self.callback('added', info)
+            else:
+                logger.warning(f"Could not get service info for {name}")
+                print(f"DEBUG: No service info for {name}")
     
     def remove_service(self, zeroconf: Zeroconf, service_type: str, name: str):
         """Called when a service is removed"""

@@ -727,41 +727,55 @@ class ExostreamGUI:
         event_type = data.get('event')
         service_data = data.get('data')
         
+        print(f"DEBUG GUI: Service event: {event_type}")
+        self._log(f"DEBUG: Service event: {event_type}", "DEBUG")
+        
         if event_type == 'added':
-            # Add service to our list
-            name = service_data.name.replace('._exostream._tcp.local.', '')
-            
-            # Get IP address
-            import socket
-            addresses = [socket.inet_ntoa(addr) for addr in service_data.addresses]
-            host = addresses[0] if addresses else "unknown"
-            
-            # Get properties
-            properties = {
-                key.decode('utf-8') if isinstance(key, bytes) else key:
-                val.decode('utf-8') if isinstance(val, bytes) else val
-                for key, val in service_data.properties.items()
-            }
-            
-            display_name = f"{name} ({host}:{service_data.port})"
-            
-            self.discovered_services[display_name] = {
-                'name': name,
-                'host': host,
-                'port': service_data.port,
-                'hostname': properties.get('hostname', 'unknown'),
-                'version': properties.get('version', 'unknown')
-            }
-            
-            # Update combo box
-            values = list(self.discovered_services.keys())
-            self.discovered_combo.config(values=values)
-            
-            # Update status
-            count = len(self.discovered_services)
-            self.discovery_status.config(text=f"✓ Found {count} camera{'s' if count != 1 else ''}")
-            
-            self._log(f"Discovered: {name} at {host}:{service_data.port}")
+            try:
+                # Add service to our list
+                name = service_data.name.replace('._exostream._tcp.local.', '')
+                
+                # Get IP address
+                import socket
+                addresses = [socket.inet_ntoa(addr) for addr in service_data.addresses]
+                host = addresses[0] if addresses else "unknown"
+                
+                print(f"DEBUG GUI: Service name={name}, host={host}, port={service_data.port}")
+                
+                # Get properties
+                properties = {
+                    key.decode('utf-8') if isinstance(key, bytes) else key:
+                    val.decode('utf-8') if isinstance(val, bytes) else val
+                    for key, val in service_data.properties.items()
+                }
+                
+                print(f"DEBUG GUI: Properties: {properties}")
+                
+                display_name = f"{name} ({host}:{service_data.port})"
+                
+                self.discovered_services[display_name] = {
+                    'name': name,
+                    'host': host,
+                    'port': service_data.port,
+                    'hostname': properties.get('hostname', properties.get(b'hostname', 'unknown')),
+                    'version': properties.get('version', properties.get(b'version', 'unknown'))
+                }
+                
+                # Update combo box
+                values = list(self.discovered_services.keys())
+                self.discovered_combo.config(values=values)
+                
+                # Update status
+                count = len(self.discovered_services)
+                self.discovery_status.config(text=f"✓ Found {count} camera{'s' if count != 1 else ''}")
+                
+                self._log(f"Discovered: {name} at {host}:{service_data.port}")
+                
+            except Exception as e:
+                print(f"DEBUG GUI ERROR: {e}")
+                import traceback
+                traceback.print_exc()
+                self._log(f"Error processing service: {e}", "ERROR")
             
         elif event_type == 'removed':
             # Remove service from our list
