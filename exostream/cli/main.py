@@ -1,6 +1,7 @@
 """Main CLI entry point for Exostream client"""
 
 import sys
+import time
 import click
 from rich.console import Console
 from rich.table import Table
@@ -182,10 +183,6 @@ def start(ctx, device, name, resolution, fps, raw_input, groups):
         console.print()
         
         # Show next steps
-        console.print("[dim]To view the stream:[/dim]")
-        console.print(f"  • Open NDI Studio Monitor or OBS")
-        console.print(f"  • Look for '[cyan]{name}[/cyan]' in NDI sources")
-        console.print()
         console.print("[dim]To stop streaming:[/dim]")
         console.print(f"  [cyan]exostream stop[/cyan]")
         console.print()
@@ -231,8 +228,6 @@ def stop(ctx):
 @click.pass_context
 def status(ctx, watch):
     """Show streaming status"""
-    
-    import time
     
     try:
         socket_path = ctx.obj.get('socket', DEFAULT_SOCKET) if ctx.obj else DEFAULT_SOCKET
@@ -386,6 +381,89 @@ def daemon():
     pass
 
 
+@daemon.command(name='start')
+@click.option('--socket', default=DEFAULT_SOCKET, help='Daemon socket path')
+@click.option('--state-dir', type=click.Path(), help='State directory')
+@click.option('--verbose', '-v', is_flag=True, help='Verbose logging')
+def daemon_start(socket, state_dir, verbose):
+    """Start the daemon in background"""
+    
+    console.print()
+    
+    # Check if already running
+    client = IPCClientManager(socket)
+    if client.is_daemon_running():
+        console.print(Panel(
+            "[yellow]Daemon is already running[/yellow]\n\n"
+            f"Socket: [cyan]{socket}[/cyan]\n\n"
+            "Use [cyan]exostream daemon status[/cyan] to check status",
+            title="Already Running",
+            border_style="yellow"
+        ))
+        console.print()
+        return
+    
+    # Start daemon in background
+    import subprocess
+    
+    cmd = ['exostreamd', '--socket', socket]
+    if state_dir:
+        cmd.extend(['--state-dir', state_dir])
+    if verbose:
+        cmd.append('--verbose')
+    
+    try:
+        with console.status("[yellow]Starting daemon...[/yellow]"):
+            # Start daemon in background, detached from terminal
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True  # Detach from terminal
+            )
+            
+            # Wait a moment for it to start
+            time.sleep(1.0)
+            
+            # Check if it's running
+            if client.is_daemon_running():
+                console.print(Panel(
+                    f"[green]✓ Daemon started successfully[/green]\n\n"
+                    f"Socket: [cyan]{socket}[/cyan]\n\n"
+                    "[dim]The daemon is running in the background.[/dim]",
+                    title="Success",
+                    border_style="green"
+                ))
+            else:
+                console.print(Panel(
+                    "[red]✗ Daemon failed to start[/red]\n\n"
+                    "Try starting manually with verbose output:\n"
+                    f"  [cyan]exostreamd --verbose[/cyan]",
+                    title="Error",
+                    border_style="red"
+                ))
+                sys.exit(1)
+    except FileNotFoundError:
+        console.print(Panel(
+            "[red]✗ exostreamd command not found[/red]\n\n"
+            "Make sure exostream is installed:\n"
+            "  [cyan]pip3 install -e . --user[/cyan]",
+            title="Error",
+            border_style="red"
+        ))
+        sys.exit(1)
+    except Exception as e:
+        console.print(Panel(
+            f"[red]✗ Failed to start daemon[/red]\n\n"
+            f"Error: {e}",
+            title="Error",
+            border_style="red"
+        ))
+        sys.exit(1)
+    
+    console.print()
+
+
 @daemon.command(name='status')
 @click.option('--socket', default=DEFAULT_SOCKET, help='Daemon socket path')
 def daemon_status(socket):
@@ -442,11 +520,10 @@ def daemon_status(socket):
         console.print()
 
 
-@daemon.command(name='shutdown')
+@daemon.command(name='stop')
 @click.option('--socket', default=DEFAULT_SOCKET, help='Daemon socket path')
-@click.confirmation_option(prompt='Are you sure you want to shutdown the daemon?')
-def daemon_shutdown(socket):
-    """Shutdown the daemon"""
+def daemon_stop(socket):
+    """Stop the daemon"""
     
     console.print()
     
@@ -462,20 +539,30 @@ def daemon_shutdown(socket):
             console.print()
             return
         
-        with console.status("[yellow]Shutting down daemon...[/yellow]"):
+        with console.status("[yellow]Stopping daemon...[/yellow]"):
             client.shutdown_daemon()
+            time.sleep(0.5)
         
         console.print(Panel(
-            "[green]✓ Daemon shutdown initiated[/green]\n\n"
-            "[dim]The daemon will stop after cleaning up resources.[/dim]",
+            "[green]✓ Daemon stopped[/green]",
             title="Success",
             border_style="green"
         ))
         console.print()
         
     except Exception as e:
-        handle_error(e, "shutdown")
+        handle_error(e, "stop")
         sys.exit(1)
+
+
+@daemon.command(name='shutdown')
+@click.option('--socket', default=DEFAULT_SOCKET, help='Daemon socket path')
+def daemon_shutdown(socket):
+    """Shutdown the daemon (alias for stop)"""
+    # Just call stop
+    import click
+    ctx = click.get_current_context()
+    ctx.invoke(daemon_stop, socket=socket)
 
 
 @daemon.command(name='ping')
