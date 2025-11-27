@@ -36,6 +36,31 @@ class NDIConfig:
 
 
 @dataclass
+class NetworkConfig:
+    """Network control configuration"""
+    enabled: bool = False  # Disabled by default for security
+    host: str = "0.0.0.0"  # Listen on all interfaces
+    port: int = 9023  # Default control port
+    
+    def to_dict(self):
+        """Convert to dictionary"""
+        return {
+            'enabled': self.enabled,
+            'host': self.host,
+            'port': self.port
+        }
+    
+    @classmethod
+    def from_dict(cls, data: dict):
+        """Create from dictionary"""
+        return cls(
+            enabled=data.get('enabled', False),
+            host=data.get('host', '0.0.0.0'),
+            port=data.get('port', 9023)
+        )
+
+
+@dataclass
 class StreamConfig:
     """Complete streaming configuration"""
     video: VideoConfig

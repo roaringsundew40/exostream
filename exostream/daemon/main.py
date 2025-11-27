@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Dict, Any
 
 from exostream.daemon.ipc_server import IPCServerManager
+from exostream.daemon.tcp_server import TCPServerManager
+from exostream.daemon.settings_manager import SettingsManager
 from exostream.daemon.service import (
     StreamingService, 
     StreamAlreadyRunningError,
@@ -20,8 +22,10 @@ from exostream.daemon.state_manager import StateManager
 from exostream.common.protocol import (
     Methods, 
     RPCError,
-    StartStreamParams
+    StartStreamParams,
+    UpdateSettingsParams
 )
+from exostream.common.config import NetworkConfig
 from exostream.common.logger import setup_logger, get_logger
 
 # Version
@@ -44,24 +48,33 @@ class ExostreamDaemon:
     DEFAULT_SOCKET_PATH = "/tmp/exostream.sock"
     
     def __init__(self, socket_path: str = DEFAULT_SOCKET_PATH,
-                 state_dir: Path = None):
+                 state_dir: Path = None,
+                 network_config: NetworkConfig = None):
         """
         Initialize daemon
         
         Args:
             socket_path: Path to Unix socket
             state_dir: Directory for state files
+            network_config: Network control configuration (TCP server)
         """
         self.socket_path = socket_path
         self.state_manager = StateManager(state_dir)
         self.streaming_service = StreamingService(self.state_manager)
+        self.settings_manager = SettingsManager(self.state_manager)
         self.ipc_server = IPCServerManager(socket_path)
+        
+        # TCP server for network control (optional)
+        self.network_config = network_config or NetworkConfig()
+        self.tcp_server = TCPServerManager(self.network_config)
         
         self._running = False
         self._setup_signal_handlers()
         self._register_handlers()
         
         logger.info(f"ExostreamDaemon v{__version__} initialized")
+        if self.network_config.enabled:
+            logger.info(f"Network control enabled on port {self.network_config.port}")
     
     def _setup_signal_handlers(self):
         """Setup signal handlers for graceful shutdown"""
@@ -96,6 +109,20 @@ class ExostreamDaemon:
             self._handle_devices_list
         )
         
+        # Settings control (for network control)
+        self.ipc_server.register_handler(
+            Methods.SETTINGS_GET,
+            self._handle_settings_get
+        )
+        self.ipc_server.register_handler(
+            Methods.SETTINGS_UPDATE,
+            self._handle_settings_update
+        )
+        self.ipc_server.register_handler(
+            Methods.SETTINGS_GET_AVAILABLE,
+            self._handle_settings_get_available
+        )
+        
         # Daemon control
         self.ipc_server.register_handler(
             Methods.DAEMON_STATUS,
@@ -109,6 +136,19 @@ class ExostreamDaemon:
             Methods.DAEMON_SHUTDOWN,
             self._handle_daemon_shutdown
         )
+        
+        # Register same handlers for TCP server (network control)
+        if self.network_config.enabled:
+            self.tcp_server.register_handler(Methods.STREAM_START, self._handle_stream_start)
+            self.tcp_server.register_handler(Methods.STREAM_STOP, self._handle_stream_stop)
+            self.tcp_server.register_handler(Methods.STREAM_STATUS, self._handle_stream_status)
+            self.tcp_server.register_handler(Methods.DEVICES_LIST, self._handle_devices_list)
+            self.tcp_server.register_handler(Methods.SETTINGS_GET, self._handle_settings_get)
+            self.tcp_server.register_handler(Methods.SETTINGS_UPDATE, self._handle_settings_update)
+            self.tcp_server.register_handler(Methods.SETTINGS_GET_AVAILABLE, self._handle_settings_get_available)
+            self.tcp_server.register_handler(Methods.DAEMON_STATUS, self._handle_daemon_status)
+            self.tcp_server.register_handler(Methods.DAEMON_PING, self._handle_daemon_ping)
+            logger.info("TCP server handlers registered")
         
         logger.info("RPC handlers registered")
     
@@ -281,6 +321,124 @@ class ExostreamDaemon:
         
         return {"status": "shutting_down"}
     
+    def _handle_settings_get(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Handle settings.get method
+        
+        Args:
+            params: Parameters (currently unused)
+        
+        Returns:
+            Current settings dictionary
+        """
+        logger.debug("RPC: settings.get called")
+        
+        try:
+            settings = self.settings_manager.get_current_settings()
+            return settings
+        except Exception as e:
+            logger.error(f"Error getting settings: {e}")
+            raise StreamingError(f"Failed to get settings: {e}")
+    
+    def _handle_settings_update(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Handle settings.update method
+        
+        Updates settings and optionally restarts stream if currently streaming.
+        
+        Args:
+            params: Update parameters
+        
+        Returns:
+            Result dictionary with status and updated settings
+        """
+        logger.info(f"RPC: settings.update called with params: {params}")
+        
+        try:
+            # Parse parameters
+            update_params = UpdateSettingsParams.from_dict(params)
+            
+            # Validate settings
+            is_valid, error_msg = self.settings_manager.validate_settings_update(update_params)
+            if not is_valid:
+                raise ValueError(f"Invalid settings: {error_msg}")
+            
+            # Get current settings
+            current_settings = self.settings_manager.get_current_settings()
+            
+            # Merge with updates
+            new_settings = self.settings_manager.merge_settings(current_settings, update_params)
+            
+            # Check if currently streaming
+            was_streaming = self.streaming_service.is_streaming()
+            
+            # If streaming and restart is requested, stop and restart with new settings
+            if was_streaming and update_params.restart_if_streaming:
+                logger.info("Restarting stream with new settings...")
+                
+                # Stop current stream
+                self.streaming_service.stop_streaming()
+                
+                # Start with new settings
+                result = self.streaming_service.start_streaming(
+                    device=new_settings['device'],
+                    name=new_settings.get('name') or 'exostream',
+                    resolution=new_settings['resolution'],
+                    fps=new_settings['fps'],
+                    raw_input=new_settings.get('raw_input', False),
+                    groups=new_settings.get('groups')
+                )
+                
+                return {
+                    "status": "updated_and_restarted",
+                    "settings": new_settings,
+                    "stream_info": result
+                }
+            
+            elif was_streaming and not update_params.restart_if_streaming:
+                # Settings will be applied on next stream start
+                logger.info("Stream is running but restart not requested. Settings saved for next start.")
+                return {
+                    "status": "saved_for_next_start",
+                    "settings": new_settings,
+                    "message": "Settings will be applied when stream is restarted"
+                }
+            
+            else:
+                # Not streaming, just save settings
+                logger.info("Settings updated (not currently streaming)")
+                return {
+                    "status": "updated",
+                    "settings": new_settings
+                }
+        
+        except ValueError as e:
+            raise StreamingError(f"Invalid settings: {e}")
+        except Exception as e:
+            logger.error(f"Error updating settings: {e}")
+            raise StreamingError(f"Failed to update settings: {e}")
+    
+    def _handle_settings_get_available(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Handle settings.get_available method
+        
+        Returns available configuration options (devices, resolutions, fps).
+        
+        Args:
+            params: Parameters (currently unused)
+        
+        Returns:
+            Dictionary with available options
+        """
+        logger.debug("RPC: settings.get_available called")
+        
+        try:
+            options = self.settings_manager.get_available_options()
+            return options
+        except Exception as e:
+            logger.error(f"Error getting available options: {e}")
+            raise StreamingError(f"Failed to get available options: {e}")
+    
     # ========================================================================
     # Daemon Lifecycle
     # ========================================================================
@@ -292,9 +450,18 @@ class ExostreamDaemon:
         # Mark daemon as started
         self.state_manager.set_daemon_started(os.getpid())
         
-        # Start IPC server
+        # Start IPC server (local Unix socket)
         self.ipc_server.start()
         logger.info(f"IPC server listening on {self.socket_path}")
+        
+        # Start TCP server (network control) if enabled
+        if self.network_config.enabled:
+            try:
+                self.tcp_server.start()
+                logger.info(f"TCP server listening on {self.network_config.host}:{self.network_config.port}")
+            except Exception as e:
+                logger.error(f"Failed to start TCP server: {e}")
+                logger.warning("Daemon will continue without network control")
         
         self._running = True
         logger.info("Daemon started successfully")
@@ -329,6 +496,13 @@ class ExostreamDaemon:
             self.ipc_server.stop()
         except Exception as e:
             logger.error(f"Error stopping IPC server: {e}")
+        
+        # Stop TCP server if enabled
+        if self.network_config.enabled:
+            try:
+                self.tcp_server.stop()
+            except Exception as e:
+                logger.error(f"Error stopping TCP server: {e}")
         
         # Cleanup
         try:
@@ -366,6 +540,22 @@ def main():
         help="Verbose logging"
     )
     parser.add_argument(
+        "--network-control",
+        action="store_true",
+        help="Enable network control (TCP server)"
+    )
+    parser.add_argument(
+        "--network-port",
+        type=int,
+        default=9023,
+        help="Network control port (default: 9023)"
+    )
+    parser.add_argument(
+        "--network-host",
+        default="0.0.0.0",
+        help="Network control host (default: 0.0.0.0)"
+    )
+    parser.add_argument(
         "--version",
         action="version",
         version=f"exostreamd {__version__}"
@@ -382,11 +572,22 @@ def main():
     if args.state_dir:
         logger.info(f"State directory: {args.state_dir}")
     
+    # Create network config
+    network_config = NetworkConfig(
+        enabled=args.network_control,
+        host=args.network_host,
+        port=args.network_port
+    )
+    
+    if network_config.enabled:
+        logger.info(f"Network control enabled on {network_config.host}:{network_config.port}")
+    
     # Create and start daemon
     try:
         daemon = ExostreamDaemon(
             socket_path=args.socket,
-            state_dir=args.state_dir
+            state_dir=args.state_dir,
+            network_config=network_config
         )
         daemon.start()
     except Exception as e:
