@@ -4,8 +4,8 @@
 # Handles everything from system dependencies to FFmpeg with NDI
 #
 # Usage:
-#   ./install.sh              # Interactive mode
-#   ./install.sh --auto       # Automatic mode (compiles FFmpeg without asking)
+#   ./install.sh              # Automatic mode (compiles FFmpeg without asking)
+#   ./install.sh --interactive # Interactive mode (asks before compiling FFmpeg)
 #   ./install.sh --skip-ffmpeg # Skip FFmpeg compilation
 #
 
@@ -15,11 +15,15 @@ set -e  # Exit on error
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Parse arguments
-AUTO_MODE=0
+AUTO_MODE=1  # Default to automatic mode
 SKIP_FFMPEG_ARG=0
 
 for arg in "$@"; do
     case $arg in
+        --interactive)
+            AUTO_MODE=0
+            shift
+            ;;
         --auto)
             AUTO_MODE=1
             shift
@@ -32,8 +36,8 @@ for arg in "$@"; do
             echo "Exostream Installation Script"
             echo ""
             echo "Usage:"
-            echo "  ./install.sh              Interactive mode (default)"
-            echo "  ./install.sh --auto       Automatic mode (compiles FFmpeg)"
+            echo "  ./install.sh              Automatic mode (default, compiles FFmpeg)"
+            echo "  ./install.sh --interactive Interactive mode (asks before compiling FFmpeg)"
             echo "  ./install.sh --skip-ffmpeg Skip FFmpeg compilation"
             echo "  ./install.sh --help       Show this help"
             exit 0
@@ -83,6 +87,26 @@ if [[ $EUID -eq 0 ]]; then
    print_error "This script should NOT be run as root/sudo"
    print_info "It will ask for sudo password when needed"
    exit 1
+fi
+
+# Check if sudo is available
+if ! command -v sudo &> /dev/null; then
+    print_error "sudo is required but not found"
+    print_info "Please install sudo or run as appropriate user"
+    exit 1
+fi
+
+# Verify sudo access
+print_step "Verifying sudo access..."
+if ! sudo -n true 2>/dev/null; then
+    print_info "Sudo access required for system package installation"
+    print_info "You may be prompted for your password"
+    sudo -v || {
+        print_error "Failed to obtain sudo access"
+        exit 1
+    }
+else
+    print_success "Sudo access verified"
 fi
 
 print_header "Exostream Complete Installation for Raspberry Pi"
@@ -188,7 +212,7 @@ if [ $HAS_NDI -eq 0 ]; then
         print_warning "Streaming will NOT work without FFmpeg with NDI support"
         SKIP_FFMPEG=1
     elif [ $AUTO_MODE -eq 1 ]; then
-        print_info "Auto mode: Will compile FFmpeg with NDI support"
+        print_info "Automatic mode: Will compile FFmpeg with NDI support"
         print_warning "This will take 30-60 minutes on Raspberry Pi"
         SKIP_FFMPEG=0
     else

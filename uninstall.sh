@@ -48,6 +48,33 @@ print_header() {
     echo ""
 }
 
+# Check if running as root
+if [[ $EUID -eq 0 ]]; then
+   print_error "This script should NOT be run as root/sudo"
+   print_info "It will ask for sudo password when needed"
+   exit 1
+fi
+
+# Check if sudo is available
+if ! command -v sudo &> /dev/null; then
+    print_error "sudo is required but not found"
+    print_info "Please install sudo or run as appropriate user"
+    exit 1
+fi
+
+# Verify sudo access
+print_step "Verifying sudo access..."
+if ! sudo -n true 2>/dev/null; then
+    print_info "Sudo access required for some operations"
+    print_info "You may be prompted for your password"
+    sudo -v || {
+        print_error "Failed to obtain sudo access"
+        exit 1
+    }
+else
+    print_success "Sudo access verified"
+fi
+
 # Parse arguments
 CLEANUP_LEVEL="interactive"
 
@@ -80,7 +107,7 @@ if [ "$CLEANUP_LEVEL" = "interactive" ]; then
     echo "Choose cleanup level:"
     echo ""
     echo "  1) Basic    - Remove only Exostream (keep FFmpeg, build tools)"
-    echo "  2) Standard - Remove Exostream + state/logs (keep FFmpeg, build tools)"
+    echo "  2) Standard - Remove Exostream + state/logs + built FFmpeg (keep build tools)"
     echo "  3) Full     - Remove EVERYTHING (Exostream + FFmpeg + build deps)"
     echo ""
     read -p "Enter choice [1-3] (default: 2): " CHOICE
@@ -139,8 +166,14 @@ fi
 print_header "Step 2: Uninstall Exostream Package"
 
 print_step "Uninstalling exostream package..."
-pip3 uninstall -y exostream 2>/dev/null || print_warning "Package not found in pip"
-print_success "Package uninstalled"
+# Try user installation first (most common), then system-wide
+if pip3 uninstall -y exostream --user 2>/dev/null; then
+    print_success "Removed user installation"
+elif pip3 uninstall -y exostream 2>/dev/null; then
+    print_success "Removed system installation"
+else
+    print_warning "Package not found in pip (may already be removed)"
+fi
 
 print_step "Removing installed commands..."
 REMOVED=0
@@ -237,74 +270,98 @@ else
 fi
 
 # ============================================================================
-# STEP 6: Remove FFmpeg (Full cleanup only)
+# STEP 6: Remove FFmpeg (Standard and Full cleanup)
 # ============================================================================
 
-if [ "$CLEANUP_LEVEL" = "full" ]; then
+if [ "$CLEANUP_LEVEL" != "basic" ]; then
     print_header "Step 6: Remove FFmpeg Installation"
     
     if command -v ffmpeg &> /dev/null; then
-        print_warning "FFmpeg is installed"
-        read -p "Remove FFmpeg? (y/N) " -n 1 -r
-        echo
+        FFMPEG_PATH=$(which ffmpeg)
+        print_info "FFmpeg found at: $FFMPEG_PATH"
         
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            print_step "Removing FFmpeg..."
-            
-            # Check if it was installed via apt or compiled
-            if dpkg -l | grep -q ffmpeg; then
-                print_info "Removing FFmpeg via apt..."
-                sudo apt-get remove -y ffmpeg libavcodec-dev libavformat-dev libavutil-dev || true
-                print_success "FFmpeg removed"
-            else
-                print_info "FFmpeg appears to be compiled from source"
-                
-                # Try to remove from /usr/local
-                if [ -f "/usr/local/bin/ffmpeg" ]; then
-                    sudo rm -f /usr/local/bin/ffmpeg
-                    sudo rm -f /usr/local/bin/ffprobe
-                    sudo rm -rf /usr/local/lib/libav*
-                    sudo rm -rf /usr/local/include/libav*
-                    sudo ldconfig
-                    print_success "Removed compiled FFmpeg"
+        # Check if it was installed via apt or compiled
+        if dpkg -l | grep -q ffmpeg; then
+            # Installed via apt - ask for confirmation (might be used by other apps)
+            print_warning "FFmpeg was installed via apt (system package)"
+            if [ "$CLEANUP_LEVEL" = "full" ]; then
+                read -p "Remove FFmpeg? (y/N) " -n 1 -r
+                echo
+                if [[ $REPLY =~ ^[Yy]$ ]]; then
+                    print_step "Removing FFmpeg via apt..."
+                    sudo apt-get remove -y ffmpeg libavcodec-dev libavformat-dev libavutil-dev || true
+                    print_success "FFmpeg removed"
+                else
+                    print_info "FFmpeg kept"
                 fi
+            else
+                print_info "FFmpeg kept (system package - use --full to remove)"
             fi
         else
-            print_info "FFmpeg kept"
+            # Compiled from source - remove automatically (this is what install.sh builds)
+            print_info "FFmpeg appears to be compiled from source (built by install.sh)"
+            print_step "Removing compiled FFmpeg..."
+            
+            # Remove from /usr/local
+            if [ -f "/usr/local/bin/ffmpeg" ]; then
+                sudo rm -f /usr/local/bin/ffmpeg
+                print_success "Removed /usr/local/bin/ffmpeg"
+            fi
+            
+            if [ -f "/usr/local/bin/ffprobe" ]; then
+                sudo rm -f /usr/local/bin/ffprobe
+                print_success "Removed /usr/local/bin/ffprobe"
+            fi
+            
+            if [ -d "/usr/local/lib" ]; then
+                sudo rm -rf /usr/local/lib/libav* 2>/dev/null || true
+                print_success "Removed FFmpeg libraries"
+            fi
+            
+            if [ -d "/usr/local/include/libav" ]; then
+                sudo rm -rf /usr/local/include/libav* 2>/dev/null || true
+                print_success "Removed FFmpeg headers"
+            fi
+            
+            sudo ldconfig
+            print_success "Removed compiled FFmpeg"
         fi
     else
         print_info "FFmpeg not found"
     fi
     
-    # Remove build directory
+    # Remove build directory (always remove if it exists - it's from our install)
     print_step "Checking for FFmpeg build directory..."
     if [ -d "$HOME/ffmpeg_build" ]; then
-        print_warning "Found build directory: $HOME/ffmpeg_build"
-        read -p "Remove FFmpeg build directory? (y/N) " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            rm -rf "$HOME/ffmpeg_build"
-            print_success "Removed build directory"
-        else
-            print_info "Build directory kept"
-        fi
+        print_info "Found build directory: $HOME/ffmpeg_build"
+        rm -rf "$HOME/ffmpeg_build"
+        print_success "Removed build directory"
     else
         print_info "No build directory found"
     fi
     
-    # Remove NDI SDK
+    # Remove NDI SDK (installed for FFmpeg, so remove it when we remove compiled FFmpeg)
     print_step "Checking for NDI libraries..."
     if [ -d "/usr/local/include/ndi" ] || [ -f "/usr/local/lib/libndi.so" ]; then
-        print_warning "Found NDI SDK installation"
-        read -p "Remove NDI SDK? (y/N) " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            sudo rm -rf /usr/local/include/ndi
-            sudo rm -f /usr/local/lib/libndi*
+        if [ "$CLEANUP_LEVEL" = "full" ]; then
+            print_warning "Found NDI SDK installation"
+            read -p "Remove NDI SDK? (y/N) " -n 1 -r
+            echo
+            if [[ $REPLY =~ ^[Yy]$ ]]; then
+                sudo rm -rf /usr/local/include/ndi
+                sudo rm -f /usr/local/lib/libndi*
+                sudo ldconfig
+                print_success "Removed NDI SDK"
+            else
+                print_info "NDI SDK kept"
+            fi
+        else
+            # If we removed compiled FFmpeg, also remove NDI SDK (it was installed for FFmpeg)
+            print_info "Removing NDI SDK (installed for FFmpeg)"
+            sudo rm -rf /usr/local/include/ndi 2>/dev/null || true
+            sudo rm -f /usr/local/lib/libndi* 2>/dev/null || true
             sudo ldconfig
             print_success "Removed NDI SDK"
-        else
-            print_info "NDI SDK kept"
         fi
     else
         print_info "No NDI SDK found"
@@ -366,7 +423,10 @@ case $CLEANUP_LEVEL in
         echo "  ✓ Socket file"
         echo "  ✓ State directory and configurations"
         echo "  ✓ PATH modifications"
-        echo "  - FFmpeg kept"
+        echo "  ✓ Built FFmpeg (if compiled by install.sh)"
+        echo "  ✓ NDI SDK (if installed for FFmpeg)"
+        echo "  ✓ FFmpeg build directory"
+        echo "  - System FFmpeg kept (if installed via apt)"
         echo "  - Build dependencies kept"
         ;;
     full)
@@ -375,6 +435,7 @@ case $CLEANUP_LEVEL in
         echo "  ✓ State directory and configurations"
         echo "  ✓ PATH modifications"
         echo "  ? FFmpeg (if you chose to remove)"
+        echo "  ? NDI SDK (if you chose to remove)"
         echo "  ? Build dependencies (if you chose to remove)"
         ;;
 esac
