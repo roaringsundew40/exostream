@@ -337,4 +337,22 @@ class NetworkClientManager:
             Status dictionary
         """
         return self.client.call("daemon.status", {})
+    
+    def get_logs(self, level: Optional[str] = None, lines: Optional[int] = None) -> Dict[str, Any]:
+        """
+        Get daemon logs
+        
+        Args:
+            level: Filter by log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+            lines: Number of lines to retrieve (default: all)
+        
+        Returns:
+            Dictionary with logs array and metadata
+        """
+        params = {}
+        if level:
+            params['level'] = level
+        if lines:
+            params['lines'] = lines
+        return self.client.call("logs.get", params)
 

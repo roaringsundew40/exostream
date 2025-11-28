@@ -100,6 +100,7 @@ class ExostreamGUI:
         # Create tabs
         self._create_settings_tab()
         self._create_devices_tab()
+        self._create_device_log_tab()
         self._create_log_tab()
         
     def _create_connection_frame(self, parent):
@@ -273,6 +274,51 @@ class ExostreamGUI:
         # Refresh devices button
         ttk.Button(frame, text="Refresh Devices", command=self._refresh_devices).pack()
         
+    def _create_device_log_tab(self):
+        """Create device log display tab"""
+        frame = ttk.Frame(self.notebook, padding="10")
+        self.notebook.add(frame, text="Device Log")
+        
+        # Control frame for filters and refresh
+        control_frame = ttk.Frame(frame)
+        control_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        # Log level filter
+        ttk.Label(control_frame, text="Filter Level:").pack(side=tk.LEFT, padx=(0, 5))
+        self.log_level_filter = tk.StringVar(value="INFO")
+        level_combo = ttk.Combobox(control_frame, textvariable=self.log_level_filter,
+                                   values=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", "ALL"],
+                                   width=10, state='readonly')
+        level_combo.pack(side=tk.LEFT, padx=(0, 10))
+        level_combo.bind('<<ComboboxSelected>>', lambda e: self._refresh_device_log())
+        
+        # Lines to show
+        ttk.Label(control_frame, text="Lines:").pack(side=tk.LEFT, padx=(0, 5))
+        self.log_lines_var = tk.StringVar(value="500")
+        lines_entry = ttk.Entry(control_frame, textvariable=self.log_lines_var, width=8)
+        lines_entry.pack(side=tk.LEFT, padx=(0, 10))
+        
+        # Refresh button
+        ttk.Button(control_frame, text="🔄 Refresh", command=self._refresh_device_log).pack(side=tk.LEFT, padx=(0, 10))
+        
+        # Auto-refresh checkbox
+        self.device_log_auto_refresh = tk.BooleanVar(value=False)
+        ttk.Checkbutton(control_frame, text="Auto-refresh (5s)", 
+                       variable=self.device_log_auto_refresh,
+                       command=self._toggle_device_log_auto_refresh).pack(side=tk.LEFT)
+        
+        # Log display
+        self.device_log_text = scrolledtext.ScrolledText(frame, wrap=tk.WORD, height=25, 
+                                                         font=('Courier', 9))
+        self.device_log_text.pack(fill=tk.BOTH, expand=True)
+        
+        # Initial message
+        self.device_log_text.insert(tk.END, "Connect to a daemon to view device logs.\n")
+        self.device_log_text.config(state=tk.DISABLED)
+        
+        # Auto-refresh job
+        self.device_log_refresh_job = None
+        
     def _create_log_tab(self):
         """Create log display tab"""
         frame = ttk.Frame(self.notebook, padding="10")
@@ -371,6 +417,17 @@ class ExostreamGUI:
             self.root.after_cancel(self.refresh_job)
             self.refresh_job = None
         
+        # Stop device log auto-refresh
+        if self.device_log_refresh_job:
+            self.root.after_cancel(self.device_log_refresh_job)
+            self.device_log_refresh_job = None
+        
+        # Clear device log display
+        self.device_log_text.config(state=tk.NORMAL)
+        self.device_log_text.delete('1.0', tk.END)
+        self.device_log_text.insert(tk.END, "Connect to a daemon to view device logs.\n")
+        self.device_log_text.config(state=tk.DISABLED)
+        
         self._log("Disconnected")
     
     def _start_discovery(self):
@@ -435,10 +492,15 @@ class ExostreamGUI:
         # Refresh status
         self._refresh_status()
         self._refresh_devices()
+        self._refresh_device_log()
         
         # Start auto-refresh if enabled
         if self.auto_refresh.get():
             self._schedule_refresh()
+        
+        # Start device log auto-refresh if enabled
+        if self.device_log_auto_refresh.get():
+            self._schedule_device_log_refresh()
         
     def _toggle_auto_refresh(self):
         """Toggle auto-refresh"""
@@ -598,6 +660,79 @@ class ExostreamGUI:
         fps_options = options.get('fps_options', [])
         if fps_options:
             self.new_fps.config(values=[str(f) for f in fps_options])
+    
+    def _refresh_device_log(self):
+        """Refresh device log display"""
+        if not self.connected:
+            self.device_log_text.config(state=tk.NORMAL)
+            self.device_log_text.delete('1.0', tk.END)
+            self.device_log_text.insert(tk.END, "Connect to a daemon to view device logs.\n")
+            self.device_log_text.config(state=tk.DISABLED)
+            return
+        
+        def refresh_thread():
+            try:
+                # Get filter settings
+                level = self.log_level_filter.get()
+                if level == "ALL":
+                    level = None
+                
+                lines_str = self.log_lines_var.get()
+                try:
+                    lines = int(lines_str) if lines_str else None
+                except ValueError:
+                    lines = 500  # Default
+                
+                # Get logs from daemon
+                result = self.client.get_logs(level=level, lines=lines)
+                self.message_queue.put(('device_log_update', result))
+            except Exception as e:
+                self.message_queue.put(('device_log_error', str(e)))
+        
+        threading.Thread(target=refresh_thread, daemon=True).start()
+    
+    def _toggle_device_log_auto_refresh(self):
+        """Toggle auto-refresh for device log"""
+        if self.device_log_auto_refresh.get() and self.connected:
+            self._schedule_device_log_refresh()
+        elif self.device_log_refresh_job:
+            self.root.after_cancel(self.device_log_refresh_job)
+            self.device_log_refresh_job = None
+    
+    def _schedule_device_log_refresh(self):
+        """Schedule next device log refresh"""
+        if self.device_log_auto_refresh.get() and self.connected:
+            self._refresh_device_log()
+            self.device_log_refresh_job = self.root.after(5000, self._schedule_device_log_refresh)  # 5 seconds
+    
+    def _update_device_log_display(self, data: Dict[str, Any]):
+        """Update device log display with new logs"""
+        logs = data.get('logs', [])
+        total_lines = data.get('total_lines', 0)
+        filtered_by = data.get('filtered_by')
+        
+        # Enable text widget for editing
+        self.device_log_text.config(state=tk.NORMAL)
+        self.device_log_text.delete('1.0', tk.END)
+        
+        if not logs:
+            self.device_log_text.insert(tk.END, "No logs available.\n")
+            if filtered_by:
+                self.device_log_text.insert(tk.END, f"Filtered by: {filtered_by}\n")
+        else:
+            # Display logs
+            for log_line in logs:
+                self.device_log_text.insert(tk.END, log_line + '\n')
+            
+            # Add summary
+            self.device_log_text.insert(tk.END, f"\n--- Total: {total_lines} lines")
+            if filtered_by:
+                self.device_log_text.insert(tk.END, f" (filtered by {filtered_by})")
+            self.device_log_text.insert(tk.END, " ---\n")
+        
+        # Scroll to bottom
+        self.device_log_text.see(tk.END)
+        self.device_log_text.config(state=tk.DISABLED)
         
     def _update_settings(self):
         """Update camera settings"""
@@ -742,6 +877,14 @@ class ExostreamGUI:
                 elif msg_type == 'discovery_error':
                     self._log(f"Discovery error: {msg_data}", "ERROR")
                     messagebox.showerror("Discovery Error", f"Failed to start discovery: {msg_data}")
+                elif msg_type == 'device_log_update':
+                    self._update_device_log_display(msg_data)
+                elif msg_type == 'device_log_error':
+                    self._log(f"Error fetching device logs: {msg_data}", "ERROR")
+                    self.device_log_text.config(state=tk.NORMAL)
+                    self.device_log_text.insert(tk.END, f"\n[ERROR] Failed to fetch logs: {msg_data}\n")
+                    self.device_log_text.see(tk.END)
+                    self.device_log_text.config(state=tk.DISABLED)
                 elif msg_type == 'service_event':
                     self._handle_service_event(msg_data)
                     

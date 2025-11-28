@@ -24,7 +24,8 @@ from exostream.common.protocol import (
     Methods, 
     RPCError,
     StartStreamParams,
-    UpdateSettingsParams
+    UpdateSettingsParams,
+    GetLogsParams
 )
 from exostream.common.config import NetworkConfig
 from exostream.common.discovery import ExostreamServicePublisher
@@ -147,6 +148,12 @@ class ExostreamDaemon:
             self._handle_daemon_shutdown
         )
         
+        # Logs
+        self.ipc_server.register_handler(
+            Methods.LOGS_GET,
+            self._handle_logs_get
+        )
+        
         # Register same handlers for TCP server (network control)
         if self.network_config.enabled:
             self.tcp_server.register_handler(Methods.STREAM_START, self._handle_stream_start)
@@ -158,6 +165,7 @@ class ExostreamDaemon:
             self.tcp_server.register_handler(Methods.SETTINGS_GET_AVAILABLE, self._handle_settings_get_available)
             self.tcp_server.register_handler(Methods.DAEMON_STATUS, self._handle_daemon_status)
             self.tcp_server.register_handler(Methods.DAEMON_PING, self._handle_daemon_ping)
+            self.tcp_server.register_handler(Methods.LOGS_GET, self._handle_logs_get)
             logger.info("TCP server handlers registered")
         
         logger.info("RPC handlers registered")
@@ -330,6 +338,79 @@ class ExostreamDaemon:
         threading.Thread(target=shutdown_thread, daemon=True).start()
         
         return {"status": "shutting_down"}
+    
+    def _handle_logs_get(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Handle logs.get method
+        
+        Args:
+            params: Log retrieval parameters (level, lines)
+        
+        Returns:
+            Dictionary with log entries
+        """
+        logger.debug("RPC: logs.get called")
+        
+        try:
+            # Parse parameters
+            log_params = GetLogsParams.from_dict(params)
+            
+            # Get log file path
+            from exostream.common.logger import DEFAULT_LOG_DIR, DEFAULT_LOG_FILE
+            log_path = DEFAULT_LOG_DIR / DEFAULT_LOG_FILE
+            
+            if not log_path.exists():
+                return {
+                    "logs": [],
+                    "total_lines": 0,
+                    "message": "Log file does not exist"
+                }
+            
+            # Read log file
+            with open(log_path, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+            
+            # Filter by level if specified
+            if log_params.level:
+                level_upper = log_params.level.upper()
+                level_priority = {
+                    'DEBUG': 0,
+                    'INFO': 1,
+                    'WARNING': 2,
+                    'ERROR': 3,
+                    'CRITICAL': 4
+                }
+                requested_priority = level_priority.get(level_upper, 1)
+                
+                # Levels to include (requested level and higher priority)
+                levels_to_include = [
+                    level for level, priority in level_priority.items()
+                    if priority >= requested_priority
+                ]
+                
+                filtered_lines = []
+                for line in lines:
+                    # Check if line contains any of the included levels
+                    for level in levels_to_include:
+                        if f" - {level} - " in line or f" - {level}:" in line:
+                            filtered_lines.append(line)
+                            break
+                lines = filtered_lines
+            
+            # Limit number of lines if specified
+            if log_params.lines and log_params.lines > 0:
+                lines = lines[-log_params.lines:]  # Get last N lines
+            
+            return {
+                "logs": [line.rstrip('\n') for line in lines],
+                "total_lines": len(lines),
+                "filtered_by": log_params.level,
+                "requested_lines": log_params.lines
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting logs: {e}")
+            raise StreamingError(f"Failed to get logs: {e}")
     
     def _handle_settings_get(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """

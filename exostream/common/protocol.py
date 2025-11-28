@@ -237,6 +237,23 @@ class SettingsInfo:
         return cls(**data)
 
 
+@dataclass
+class GetLogsParams:
+    """Parameters for logs.get method"""
+    level: Optional[str] = None  # Filter by level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+    lines: Optional[int] = None  # Number of lines to retrieve (default: all)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'GetLogsParams':
+        return cls(
+            level=data.get('level'),
+            lines=data.get('lines')
+        )
+
+
 # ============================================================================
 # Method names (constants)
 # ============================================================================
@@ -260,6 +277,9 @@ class Methods:
     DAEMON_STATUS = "daemon.status"
     DAEMON_SHUTDOWN = "daemon.shutdown"
     DAEMON_PING = "daemon.ping"
+    
+    # Logs
+    LOGS_GET = "logs.get"
 
 
 # ============================================================================
