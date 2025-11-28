@@ -779,10 +779,6 @@ class ExostreamGUI:
                 values = list(self.discovered_services.keys())
                 self.discovered_combo.config(values=values)
                 
-                # Update status
-                count = len(self.discovered_services)
-                self.discovery_status.config(text=f"✓ Found {count} camera{'s' if count != 1 else ''}")
-                
                 if event_type == 'added':
                     self._log(f"Discovered: {name} at {host}:{port}")
                 
@@ -806,13 +802,6 @@ class ExostreamGUI:
                 # Update combo box
                 values = list(self.discovered_services.keys())
                 self.discovered_combo.config(values=values)
-                
-                # Update status
-                count = len(self.discovered_services)
-                if count > 0:
-                    self.discovery_status.config(text=f"✓ Found {count} camera{'s' if count != 1 else ''}")
-                else:
-                    self.discovery_status.config(text="🔍 Discovering...")
                 
                 self._log(f"Lost: {service_data.name}")
 
