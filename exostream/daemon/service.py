@@ -69,6 +69,7 @@ class StreamingService:
         self._encoder: Optional[FFmpegEncoder] = None
         self._encoder_thread: Optional[threading.Thread] = None
         self._current_config: Optional[StreamConfig] = None
+        self._last_raw_input: bool = False  # Track raw_input for restart/rollback
         self._errors: List[str] = []
         
         logger.info("StreamingService initialized")
@@ -152,6 +153,7 @@ class StreamingService:
                 raise StreamingError(f"Invalid configuration: {e}")
             
             self._current_config = config
+            self._last_raw_input = raw_input  # Save for restart/rollback
             
             # Create encoder
             def on_error(msg: str):
@@ -248,6 +250,187 @@ class StreamingService:
             logger.error(f"Error stopping streaming: {e}")
             self._set_state(StreamState.ERROR)
             raise StreamingError(f"Failed to stop streaming: {e}")
+    
+    def restart_streaming(self, device: Optional[str] = None, 
+                         name: Optional[str] = None,
+                         resolution: Optional[str] = None,
+                         fps: Optional[int] = None,
+                         raw_input: Optional[bool] = None,
+                         groups: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Gracefully restart streaming with new settings
+        
+        This method:
+        1. Validates new settings before stopping
+        2. Saves current settings for rollback
+        3. Stops current stream
+        4. Starts with new settings
+        5. Rolls back if restart fails
+        
+        Args:
+            device: New device path (None = keep current)
+            name: New stream name (None = keep current)
+            resolution: New resolution (None = keep current)
+            fps: New FPS (None = keep current)
+            raw_input: New raw_input setting (None = keep current)
+            groups: New NDI groups (None = keep current)
+        
+        Returns:
+            Result dictionary with status and settings
+        
+        Raises:
+            StreamNotRunningError: If not currently streaming
+            DeviceNotFoundError: If new device not found
+            StreamingError: For other errors
+        """
+        logger.info("Restarting streaming with new settings...")
+        
+        # Check if currently streaming
+        if self.state != StreamState.RUNNING:
+            raise StreamNotRunningError(
+                "Cannot restart - stream is not running. Use start_streaming instead."
+            )
+        
+        # Get current configuration for rollback
+        current_config = self._current_config
+        if not current_config:
+            raise StreamingError("No current configuration found")
+        
+        # Save current settings for rollback
+        old_device = current_config.device
+        old_name = current_config.ndi.stream_name
+        old_resolution = current_config.video.resolution
+        old_fps = current_config.video.fps
+        old_groups = current_config.ndi.groups
+        old_raw_input = getattr(self, '_last_raw_input', False)
+        
+        # Merge with new settings (use current if not provided)
+        new_device = device if device is not None else old_device
+        new_name = name if name is not None else old_name
+        new_resolution = resolution if resolution is not None else old_resolution
+        new_fps = fps if fps is not None else old_fps
+        new_raw_input = raw_input if raw_input is not None else old_raw_input
+        new_groups = groups if groups is not None else old_groups
+        
+        logger.info(f"Restart: {old_resolution}@{old_fps} -> {new_resolution}@{new_fps}")
+        
+        # Pre-validate new settings before stopping
+        try:
+            # Check if new device exists (if device changed)
+            if new_device != old_device:
+                devices = self.webcam_manager.detect_devices()
+                device_exists = any(d.path == new_device for d in devices)
+                if not device_exists:
+                    available = [d.path for d in devices]
+                    raise DeviceNotFoundError(
+                        f"Device {new_device} not found. Available: {available}"
+                    )
+            
+            # Validate resolution format
+            if 'x' not in new_resolution:
+                raise ValueError(f"Invalid resolution format: {new_resolution}")
+            
+            width, height = map(int, new_resolution.split('x'))
+            if width < 1 or height < 1:
+                raise ValueError("Resolution dimensions must be positive")
+            
+            # Validate FPS
+            if new_fps < 1 or new_fps > 120:
+                raise ValueError("FPS must be between 1 and 120")
+            
+        except Exception as e:
+            logger.error(f"Pre-validation failed: {e}")
+            raise StreamingError(f"Invalid settings: {e}")
+        
+        # Save the start time to calculate downtime
+        import time
+        stop_start_time = time.time()
+        
+        # Stop current stream
+        try:
+            logger.info("Stopping current stream...")
+            self._set_state(StreamState.STOPPING)
+            
+            # Stop encoder quickly
+            if self._encoder:
+                self._encoder.stop()
+            
+            # Wait for encoder thread (reduced timeout for faster restart)
+            if self._encoder_thread and self._encoder_thread.is_alive():
+                self._encoder_thread.join(timeout=5.0)
+                if self._encoder_thread.is_alive():
+                    logger.warning("Encoder thread did not stop in time")
+            
+            # Cleanup
+            self._cleanup_encoder()
+            self._set_state(StreamState.STOPPED)
+            
+            stop_duration = time.time() - stop_start_time
+            logger.info(f"Stream stopped in {stop_duration:.2f}s")
+            
+        except Exception as e:
+            logger.error(f"Error stopping stream during restart: {e}")
+            # Don't raise here - we're already in a bad state
+            # Try to continue with restart
+        
+        # Start with new settings
+        start_time = time.time()
+        try:
+            logger.info("Starting stream with new settings...")
+            
+            result = self.start_streaming(
+                device=new_device,
+                name=new_name,
+                resolution=new_resolution,
+                fps=new_fps,
+                raw_input=new_raw_input,
+                groups=new_groups
+            )
+            
+            restart_duration = time.time() - stop_start_time
+            logger.info(f"Stream restarted successfully in {restart_duration:.2f}s total")
+            
+            # Add restart info to result
+            result["restart_info"] = {
+                "downtime_seconds": restart_duration,
+                "old_settings": {
+                    "device": old_device,
+                    "resolution": old_resolution,
+                    "fps": old_fps
+                },
+                "new_settings": {
+                    "device": new_device,
+                    "resolution": new_resolution,
+                    "fps": new_fps
+                }
+            }
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Failed to start stream with new settings: {e}")
+            logger.warning("Attempting to rollback to previous settings...")
+            
+            # Try to rollback to previous settings
+            try:
+                rollback_result = self.start_streaming(
+                    device=old_device,
+                    name=old_name,
+                    resolution=old_resolution,
+                    fps=old_fps,
+                    raw_input=old_raw_input,
+                    groups=old_groups
+                )
+                logger.info("Successfully rolled back to previous settings")
+                raise StreamingError(
+                    f"Restart failed, rolled back to previous settings. Error: {e}"
+                )
+            except Exception as rollback_error:
+                logger.error(f"Rollback also failed: {rollback_error}")
+                raise StreamingError(
+                    f"Restart failed and rollback failed. Manual intervention required. "
+                    f"Original error: {e}, Rollback error: {rollback_error}"
+                )
     
     def get_status(self) -> Dict[str, Any]:
         """

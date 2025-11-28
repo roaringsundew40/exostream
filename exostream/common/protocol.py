@@ -191,6 +191,69 @@ class DaemonStatus:
         return cls(**data)
 
 
+@dataclass
+class UpdateSettingsParams:
+    """Parameters for settings.update method"""
+    device: Optional[str] = None
+    name: Optional[str] = None
+    resolution: Optional[str] = None
+    fps: Optional[int] = None
+    raw_input: Optional[bool] = None
+    groups: Optional[str] = None
+    restart_if_streaming: bool = True  # Auto-restart stream with new settings
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'UpdateSettingsParams':
+        return cls(
+            device=data.get('device'),
+            name=data.get('name'),
+            resolution=data.get('resolution'),
+            fps=data.get('fps'),
+            raw_input=data.get('raw_input'),
+            groups=data.get('groups'),
+            restart_if_streaming=data.get('restart_if_streaming', True)
+        )
+
+
+@dataclass
+class SettingsInfo:
+    """Current settings information"""
+    device: str
+    name: Optional[str]
+    resolution: str
+    fps: int
+    raw_input: bool
+    groups: Optional[str]
+    streaming: bool
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'SettingsInfo':
+        return cls(**data)
+
+
+@dataclass
+class GetLogsParams:
+    """Parameters for logs.get method"""
+    level: Optional[str] = None  # Filter by level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+    lines: Optional[int] = None  # Number of lines to retrieve (default: all)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'GetLogsParams':
+        return cls(
+            level=data.get('level'),
+            lines=data.get('lines')
+        )
+
+
 # ============================================================================
 # Method names (constants)
 # ============================================================================
@@ -205,10 +268,18 @@ class Methods:
     # Device management
     DEVICES_LIST = "devices.list"
     
+    # Settings control (for remote camera control)
+    SETTINGS_GET = "settings.get"
+    SETTINGS_UPDATE = "settings.update"
+    SETTINGS_GET_AVAILABLE = "settings.get_available"
+    
     # Daemon control
     DAEMON_STATUS = "daemon.status"
     DAEMON_SHUTDOWN = "daemon.shutdown"
     DAEMON_PING = "daemon.ping"
+    
+    # Logs
+    LOGS_GET = "logs.get"
 
 
 # ============================================================================
