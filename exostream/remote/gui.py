@@ -283,14 +283,14 @@ class ExostreamGUI:
         control_frame = ttk.Frame(frame)
         control_frame.pack(fill=tk.X, pady=(0, 10))
         
-        # Log level filter
-        ttk.Label(control_frame, text="Filter Level:").pack(side=tk.LEFT, padx=(0, 5))
-        self.log_level_filter = tk.StringVar(value="INFO")
-        level_combo = ttk.Combobox(control_frame, textvariable=self.log_level_filter,
-                                   values=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", "ALL"],
+        # Log filter (level and component)
+        ttk.Label(control_frame, text="Filter:").pack(side=tk.LEFT, padx=(0, 5))
+        self.log_filter = tk.StringVar(value="INFO")
+        filter_combo = ttk.Combobox(control_frame, textvariable=self.log_filter,
+                                   values=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", "ALL", "TCP", "FFMPEG"],
                                    width=10, state='readonly')
-        level_combo.pack(side=tk.LEFT, padx=(0, 10))
-        level_combo.bind('<<ComboboxSelected>>', lambda e: self._refresh_device_log())
+        filter_combo.pack(side=tk.LEFT, padx=(0, 10))
+        filter_combo.bind('<<ComboboxSelected>>', lambda e: self._refresh_device_log())
         
         # Lines to show
         ttk.Label(control_frame, text="Lines:").pack(side=tk.LEFT, padx=(0, 5))
@@ -303,14 +303,17 @@ class ExostreamGUI:
         
         # Auto-refresh checkbox
         self.device_log_auto_refresh = tk.BooleanVar(value=False)
-        ttk.Checkbutton(control_frame, text="Auto-refresh (5s)", 
+        ttk.Checkbutton(control_frame, text="Auto-refresh (1s)", 
                        variable=self.device_log_auto_refresh,
                        command=self._toggle_device_log_auto_refresh).pack(side=tk.LEFT)
         
         # Log display
         self.device_log_text = scrolledtext.ScrolledText(frame, wrap=tk.WORD, height=25, 
                                                          font=('Courier', 9), bg='#1e1e1e', fg='#ffffff')
-        self.device_log_text.pack(fill=tk.BOTH, expand=True)
+        self.device_log_text.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+        
+        # Clear log button
+        ttk.Button(frame, text="Clear Log", command=self._clear_device_log).pack()
         
         # Setup color tags for log levels (matching rich console colors)
         self.device_log_text.tag_config('timestamp', foreground='#50a14f')  # Dark green
@@ -359,6 +362,13 @@ class ExostreamGUI:
         """Clear the log"""
         self.log_text.delete('1.0', tk.END)
         self._log("Log cleared")
+    
+    def _clear_device_log(self):
+        """Clear the device log display"""
+        self.device_log_text.config(state=tk.NORMAL)
+        self.device_log_text.delete('1.0', tk.END)
+        self.device_log_text.insert(tk.END, "Log cleared.\n")
+        self.device_log_text.config(state=tk.DISABLED)
     
     def _on_closing(self):
         """Called when window is closing"""
@@ -686,9 +696,20 @@ class ExostreamGUI:
         def refresh_thread():
             try:
                 # Get filter settings
-                level = self.log_level_filter.get()
-                if level == "ALL":
+                filter_value = self.log_filter.get()
+                
+                # Determine if it's a level filter or component filter
+                level = None
+                component_filter = None
+                
+                if filter_value in ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]:
+                    level = filter_value
+                elif filter_value == "ALL":
                     level = None
+                elif filter_value == "TCP":
+                    component_filter = "tcp"
+                elif filter_value == "FFMPEG":
+                    component_filter = "ffmpeg"
                 
                 lines_str = self.log_lines_var.get()
                 try:
@@ -698,6 +719,27 @@ class ExostreamGUI:
                 
                 # Get logs from daemon
                 result = self.client.get_logs(level=level, lines=lines)
+                
+                # Apply component filtering if needed (client-side)
+                if component_filter:
+                    logs = result.get('logs', [])
+                    filtered_logs = []
+                    for log_line in logs:
+                        # Check if log line contains the component name
+                        # Format: YYYY-MM-DD HH:MM:SS - logger_name - LEVEL - message
+                        # Look for component in logger name (between first and second dash)
+                        if component_filter == "tcp":
+                            # Look for tcp_server in logger name
+                            if "tcp_server" in log_line.lower() or "tcp" in log_line.lower():
+                                filtered_logs.append(log_line)
+                        elif component_filter == "ffmpeg":
+                            # Look for ffmpeg in logger name
+                            if "ffmpeg" in log_line.lower():
+                                filtered_logs.append(log_line)
+                    result['logs'] = filtered_logs
+                    result['total_lines'] = len(filtered_logs)
+                    result['filtered_by'] = component_filter.upper()
+                
                 self.message_queue.put(('device_log_update', result))
             except Exception as e:
                 self.message_queue.put(('device_log_error', str(e)))
@@ -716,7 +758,7 @@ class ExostreamGUI:
         """Schedule next device log refresh"""
         if self.device_log_auto_refresh.get() and self.connected:
             self._refresh_device_log()
-            self.device_log_refresh_job = self.root.after(5000, self._schedule_device_log_refresh)  # 5 seconds
+            self.device_log_refresh_job = self.root.after(1000, self._schedule_device_log_refresh)  # 1 second
     
     def _insert_colored_log_line(self, log_line: str):
         """Insert a log line with colorization matching rich console output"""
