@@ -33,7 +33,7 @@ class ExostreamGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Exostream Remote Control")
-        self.root.geometry("900x700")
+        self.root.geometry("600x750")
         
         # Client and state
         self.client: Optional[NetworkClientManager] = None
@@ -345,10 +345,26 @@ class ExostreamGUI:
         self.connected = False
         self.client = None
         
-        # Update UI
+        # Update connection UI
         self.conn_status_label.config(text="● Not Connected", style='Disconnected.TLabel')
         self.connect_btn.config(state=tk.NORMAL)
         self.disconnect_btn.config(state=tk.DISABLED)
+        
+        # Reset status displays to defaults
+        self.daemon_status.config(text="Unknown")
+        self.stream_status.config(text="Unknown")
+        
+        # Reset current settings displays
+        self.current_device.config(text="Not connected")
+        self.current_resolution.config(text="Not connected")
+        self.current_fps.config(text="Not connected")
+        self.current_streaming.config(text="Unknown")
+        
+        # Clear settings input fields
+        self.new_resolution.set('')
+        self.new_fps.set('')
+        self.new_device.set('')
+        self.new_name.delete(0, tk.END)
         
         # Stop auto-refresh
         if self.refresh_job:
@@ -496,7 +512,7 @@ class ExostreamGUI:
         else:
             self.stream_status.config(text="● Not streaming", style='NotStreaming.TLabel')
         
-        # Update current settings
+        # Update current settings display
         self.current_device.config(text=settings.get('device', 'Unknown'))
         self.current_resolution.config(text=settings.get('resolution', 'Unknown'))
         self.current_fps.config(text=str(settings.get('fps', 'Unknown')))
@@ -506,6 +522,32 @@ class ExostreamGUI:
             self.current_streaming.config(text=f"Yes - {stream_name}")
         else:
             self.current_streaming.config(text="No")
+        
+        # Pre-fill update settings fields with current values
+        self._populate_settings_fields(settings)
+    
+    def _populate_settings_fields(self, settings: Dict[str, Any]):
+        """Populate the update settings input fields with current values"""
+        # Set resolution
+        resolution = settings.get('resolution', '')
+        if resolution:
+            self.new_resolution.set(resolution)
+        
+        # Set FPS
+        fps = settings.get('fps')
+        if fps is not None:
+            self.new_fps.set(str(fps))
+        
+        # Set device
+        device = settings.get('device', '')
+        if device:
+            self.new_device.set(device)
+        
+        # Set stream name
+        name = settings.get('name', '')
+        if name:
+            self.new_name.delete(0, tk.END)
+            self.new_name.insert(0, name)
         
     def _refresh_devices(self):
         """Refresh devices list"""
