@@ -187,8 +187,130 @@ class ExostreamGUI:
         
     def _create_settings_tab(self):
         """Create settings control tab"""
-        frame = ttk.Frame(self.notebook, padding="10")
-        self.notebook.add(frame, text="Settings & Control")
+        # Create outer frame for the tab
+        outer_frame = ttk.Frame(self.notebook)
+        self.notebook.add(outer_frame, text="Settings & Control")
+        
+        # Create canvas with scrollbar for scrollable content
+        canvas = tk.Canvas(outer_frame, highlightthickness=0, takefocus=True)
+        scrollbar = ttk.Scrollbar(outer_frame, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas, padding="10")
+        
+        # Configure scrollable frame column
+        scrollable_frame.columnconfigure(0, weight=1)
+        
+        # Update scroll region when content changes
+        def update_scroll_region(event=None):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+        
+        scrollable_frame.bind("<Configure>", update_scroll_region)
+        
+        # Create window in canvas for scrollable frame
+        canvas_window = canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        
+        # Configure canvas scrolling
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        # Update canvas width when outer frame width changes
+        def configure_canvas_width(event):
+            canvas_width = event.width
+            canvas.itemconfig(canvas_window, width=canvas_width)
+        outer_frame.bind("<Configure>", configure_canvas_width)
+        
+        # Pack canvas and scrollbar
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Mousewheel scrolling function
+        def scroll_canvas(delta):
+            """Scroll the canvas by delta units"""
+            canvas.yview_scroll(int(delta), "units")
+        
+        # Track if mouse is over settings tab (for macOS trackpad)
+        self._settings_tab_active = False
+        
+        # Bind mousewheel to canvas (works on Windows and Linux)
+        def on_mousewheel(event):
+            scroll_canvas(-1 * (event.delta / 120))
+        canvas.bind("<MouseWheel>", on_mousewheel)
+        
+        # macOS trackpad and mousewheel support
+        def on_mousewheel_mac(event):
+            if event.num == 4:
+                scroll_canvas(-5)  # Scroll up (more units for smoother trackpad)
+            elif event.num == 5:
+                scroll_canvas(5)   # Scroll down
+            return "break"  # Prevent event propagation
+        
+        # Bind to canvas
+        canvas.bind("<Button-4>", on_mousewheel_mac)
+        canvas.bind("<Button-5>", on_mousewheel_mac)
+        
+        # Bind to scrollable frame
+        scrollable_frame.bind("<Button-4>", on_mousewheel_mac)
+        scrollable_frame.bind("<Button-5>", on_mousewheel_mac)
+        scrollable_frame.bind("<MouseWheel>", on_mousewheel)
+        
+        # macOS trackpad gesture support - recursively bind to all child widgets
+        def bind_scroll_to_widget(widget):
+            """Recursively bind scroll events to widget and all its children"""
+            widget.bind("<Button-4>", on_mousewheel_mac)
+            widget.bind("<Button-5>", on_mousewheel_mac)
+            widget.bind("<MouseWheel>", on_mousewheel)
+            for child in widget.winfo_children():
+                bind_scroll_to_widget(child)
+        
+        # Bind scroll events to scrollable frame and all its children
+        bind_scroll_to_widget(scrollable_frame)
+        
+        # For macOS trackpad, use bind_all with tab checking
+        if sys.platform == 'darwin':
+            # Store reference to canvas for global handler
+            self._settings_canvas = canvas
+            
+            def on_global_scroll_mac(event):
+                """Handle trackpad gestures globally, but only scroll if settings tab is active"""
+                try:
+                    # Check if settings tab is currently selected
+                    try:
+                        current_tab = self.notebook.tab(self.notebook.select(), "text")
+                        if current_tab == "Settings & Control":
+                            # Just scroll - don't check mouse position for trackpad gestures
+                            if event.num == 4:
+                                scroll_canvas(-5)
+                            elif event.num == 5:
+                                scroll_canvas(5)
+                            return "break"
+                    except (tk.TclError, AttributeError, IndexError):
+                        # Tab might not be selected yet, ignore
+                        pass
+                except:
+                    pass
+            
+            # Use bind_all for macOS trackpad - this is more reliable for trackpad gestures
+            # Store handlers for cleanup
+            if not hasattr(self, '_settings_scroll_handlers'):
+                self._settings_scroll_handlers = []
+            self._settings_scroll_handlers.append("<Button-4>")
+            self._settings_scroll_handlers.append("<Button-5>")
+            
+            self.root.bind_all("<Button-4>", on_global_scroll_mac)
+            self.root.bind_all("<Button-5>", on_global_scroll_mac)
+            
+            # Also ensure canvas gets focus when settings tab is selected
+            def on_tab_changed(event):
+                try:
+                    current_tab = self.notebook.tab(self.notebook.select(), "text")
+                    if current_tab == "Settings & Control":
+                        # Give canvas focus so it can receive trackpad events
+                        canvas.focus_set()
+                except:
+                    pass
+            
+            self.notebook.bind("<<NotebookTabChanged>>", on_tab_changed)
+        
+        # Use scrollable_frame instead of frame for all content
+        frame = scrollable_frame
         
         # Current settings display
         settings_frame = ttk.LabelFrame(frame, text="Current Settings", padding="10")
@@ -397,6 +519,14 @@ class ExostreamGUI:
         if self.discovery:
             try:
                 self.discovery.stop()
+            except:
+                pass
+        
+        # Clean up bind_all handlers for macOS trackpad
+        if sys.platform == 'darwin' and hasattr(self, '_settings_scroll_handlers'):
+            try:
+                for handler in self._settings_scroll_handlers:
+                    self.root.unbind_all(handler)
             except:
                 pass
         
