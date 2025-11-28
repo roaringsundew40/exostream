@@ -44,7 +44,6 @@ class ExostreamGUI:
         # Service discovery
         self.discovery: Optional[ExostreamServiceDiscovery] = None
         self.discovered_services = {}
-        self.discovering = False
         
         # Status refresh
         self.auto_refresh = tk.BooleanVar(value=True)
@@ -63,6 +62,9 @@ class ExostreamGUI:
         
         # Start message processing
         self._process_messages()
+        
+        # Auto-start discovery
+        self._start_discovery()
         
     def _setup_styles(self):
         """Setup custom styles for widgets"""
@@ -117,13 +119,9 @@ class ExostreamGUI:
         self.discovered_combo.pack(side=tk.LEFT, padx=(0, 5))
         self.discovered_combo.bind('<<ComboboxSelected>>', self._on_discovered_selected)
         
-        # Discover button
-        self.discover_btn = ttk.Button(discovery_frame, text="🔍 Discover", command=self._toggle_discovery)
-        self.discover_btn.pack(side=tk.LEFT, padx=(0, 5))
-        
-        # Discovery status
-        self.discovery_status = ttk.Label(discovery_frame, text="")
-        self.discovery_status.pack(side=tk.LEFT, padx=(5, 0))
+        # Refresh button
+        self.refresh_discovery_btn = ttk.Button(discovery_frame, text="🔄 Refresh", command=self._refresh_discovery)
+        self.refresh_discovery_btn.pack(side=tk.LEFT, padx=(0, 5))
         
         # Manual connection section
         manual_frame = ttk.Frame(frame)
@@ -306,7 +304,7 @@ class ExostreamGUI:
     def _on_closing(self):
         """Called when window is closing"""
         # Stop discovery if running
-        if self.discovering and self.discovery:
+        if self.discovery:
             try:
                 self.discovery.stop()
             except:
@@ -359,24 +357,10 @@ class ExostreamGUI:
         
         self._log("Disconnected")
     
-    def _toggle_discovery(self):
-        """Toggle service discovery"""
-        if not self.discovering:
-            self._start_discovery()
-        else:
-            self._stop_discovery()
-    
     def _start_discovery(self):
-        """Start discovering Exostream services on the network"""
-        self._log("Starting network discovery...")
-        self.discovering = True
-        self.discover_btn.config(text="⏹ Stop Discovery")
-        self.discovery_status.config(text="🔍 Discovering...")
-        
-        # Clear discovered services
-        self.discovered_services.clear()
-        self.discovered_combo.set('')
-        self.discovered_combo.config(values=[])
+        """Start discovering Exostream services on the network (runs continuously)"""
+        if self.discovery:
+            return  # Already running
         
         def discovery_thread():
             try:
@@ -388,20 +372,26 @@ class ExostreamGUI:
         
         threading.Thread(target=discovery_thread, daemon=True).start()
     
-    def _stop_discovery(self):
-        """Stop service discovery"""
-        self._log("Stopping network discovery")
-        self.discovering = False
-        self.discover_btn.config(text="🔍 Discover")
-        self.discovery_status.config(text="")
-        
+    def _refresh_discovery(self):
+        """Force refresh of discovered cameras list"""
         if self.discovery:
-            try:
-                self.discovery.stop()
-            except Exception as e:
-                self._log(f"Error stopping discovery: {e}", "ERROR")
-            finally:
-                self.discovery = None
+            # Get current services and update dropdown
+            services = self.discovery.get_services()
+            
+            # Update discovered_services dict
+            self.discovered_services.clear()
+            for svc in services:
+                display_name = f"{svc['name']} ({svc['host']}:{svc['port']})"
+                self.discovered_services[display_name] = svc
+            
+            # Update combo box
+            values = list(self.discovered_services.keys())
+            self.discovered_combo.config(values=values)
+            
+            self._log(f"Refreshed: Found {len(services)} camera(s)")
+        else:
+            # Restart discovery if not running
+            self._start_discovery()
     
     def _on_service_discovered(self, event_type: str, data):
         """Called when a service is discovered/removed"""
@@ -706,12 +696,9 @@ class ExostreamGUI:
                     self._log(f"Stop error: {msg_data}", "ERROR")
                     messagebox.showerror("Error", f"Failed to stop stream: {msg_data}")
                 elif msg_type == 'discovery_started':
-                    self._log("Discovery started - searching for cameras...")
+                    self._log("Discovery started - continuously scanning for cameras")
                 elif msg_type == 'discovery_error':
                     self._log(f"Discovery error: {msg_data}", "ERROR")
-                    self.discovering = False
-                    self.discover_btn.config(text="🔍 Discover")
-                    self.discovery_status.config(text="")
                     messagebox.showerror("Discovery Error", f"Failed to start discovery: {msg_data}")
                 elif msg_type == 'service_event':
                     self._handle_service_event(msg_data)
