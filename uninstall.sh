@@ -198,7 +198,9 @@ print_header "Step 4: Clean Up PATH Configuration"
 
 if grep -q "# Added by Exostream installer" ~/.bashrc 2>/dev/null; then
     print_step "Removing PATH modifications from ~/.bashrc..."
-    sed -i.bak '/# Added by Exostream installer/,/export PATH="$HOME\/.local\/bin:$PATH"/d' ~/.bashrc
+    # Remove the comment line and the export line
+    # Escape $ in sed pattern (in sed, $ means end of line, so we need \$)
+    sed -i.bak '/# Added by Exostream installer/,/export PATH="\$HOME\/\.local\/bin:\$PATH"/d' ~/.bashrc
     print_success "Removed PATH modifications"
     print_info "Backup saved to ~/.bashrc.bak"
 else
