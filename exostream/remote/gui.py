@@ -33,7 +33,7 @@ class ExostreamGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Exostream Remote Control")
-        self.root.geometry("700x850")  # Narrower and taller for better layout
+        self.root.geometry("900x700")
         
         # Client and state
         self.client: Optional[NetworkClientManager] = None
@@ -71,47 +71,6 @@ class ExostreamGUI:
         style.configure('Disconnected.TLabel', foreground='red', font=('Arial', 10, 'bold'))
         style.configure('Streaming.TLabel', foreground='green', font=('Arial', 10, 'bold'))
         style.configure('NotStreaming.TLabel', foreground='orange', font=('Arial', 10, 'bold'))
-    
-    def _create_scrollable_frame(self, parent):
-        """Create a scrollable frame with canvas and scrollbar"""
-        # Create canvas and scrollbar
-        canvas = tk.Canvas(parent, highlightthickness=0)
-        scrollbar = ttk.Scrollbar(parent, orient="vertical", command=canvas.yview)
-        scrollable_frame = ttk.Frame(canvas)
-        
-        # Configure canvas scrolling
-        scrollable_frame.bind(
-            "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-        )
-        
-        canvas_frame = canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-        
-        # Bind canvas width to frame width
-        def configure_canvas_width(event):
-            canvas.itemconfig(canvas_frame, width=event.width)
-        canvas.bind("<Configure>", configure_canvas_width)
-        
-        canvas.configure(yscrollcommand=scrollbar.set)
-        
-        # Pack canvas and scrollbar
-        canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
-        
-        # Enable mousewheel scrolling
-        def _on_mousewheel(event):
-            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
-        
-        def _bind_mousewheel(event):
-            canvas.bind_all("<MouseWheel>", _on_mousewheel)
-        
-        def _unbind_mousewheel(event):
-            canvas.unbind_all("<MouseWheel>")
-        
-        canvas.bind('<Enter>', _bind_mousewheel)
-        canvas.bind('<Leave>', _unbind_mousewheel)
-        
-        return scrollable_frame
         
     def _create_widgets(self):
         """Create all GUI widgets"""
@@ -219,12 +178,8 @@ class ExostreamGUI:
         
     def _create_settings_tab(self):
         """Create settings control tab"""
-        container = ttk.Frame(self.notebook)
-        self.notebook.add(container, text="Settings & Control")
-        
-        # Create scrollable frame
-        frame = self._create_scrollable_frame(container)
-        frame.configure(padding="10")
+        frame = ttk.Frame(self.notebook, padding="10")
+        self.notebook.add(frame, text="Settings & Control")
         
         # Current settings display
         settings_frame = ttk.LabelFrame(frame, text="Current Settings", padding="10")
@@ -297,12 +252,8 @@ class ExostreamGUI:
         
     def _create_devices_tab(self):
         """Create devices list tab"""
-        container = ttk.Frame(self.notebook)
-        self.notebook.add(container, text="Devices")
-        
-        # Create scrollable frame
-        frame = self._create_scrollable_frame(container)
-        frame.configure(padding="10")
+        frame = ttk.Frame(self.notebook, padding="10")
+        self.notebook.add(frame, text="Devices")
         
         # Devices list
         ttk.Label(frame, text="Available Devices:").pack(anchor=tk.W, pady=(0, 5))
