@@ -1,27 +1,47 @@
 """
-Network discovery service using mDNS/Zeroconf
+Network discovery service using UDP broadcast
 
 Allows Exostream daemons to advertise themselves on the network
 and clients to discover them automatically (like NDI discovery).
+
+Uses UDP broadcast for simplicity and reliability across all platforms.
+No mDNS/Zeroconf dependencies - just simple UDP sockets.
 """
 
 import socket
+import json
 import logging
-from typing import List, Dict, Optional, Callable
-from zeroconf import Zeroconf, ServiceInfo, ServiceBrowser, ServiceListener
+import threading
+import time
+from typing import List, Dict, Optional, Callable, Any
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
-# Service type for Exostream control
-EXOSTREAM_SERVICE_TYPE = "_exostream._tcp.local."
+# Discovery protocol settings
+DISCOVERY_PORT = 5354  # UDP port for discovery broadcasts
+BROADCAST_INTERVAL = 3.0  # seconds between broadcasts
+DISCOVERY_TIMEOUT = 10.0  # seconds before considering a service offline
+DISCOVERY_MESSAGE_TYPE = "EXOSTREAM_ANNOUNCEMENT"
+
+
+@dataclass
+class ExostreamServiceInfo:
+    """Information about a discovered Exostream service"""
+    name: str
+    hostname: str
+    host: str
+    port: int
+    version: str
+    last_seen: float
 
 
 class ExostreamServicePublisher:
     """
-    Publishes Exostream daemon on the network using mDNS/Zeroconf
+    Publishes Exostream daemon on the network using UDP broadcast
     
     This allows clients to discover the daemon without knowing its IP address.
-    Similar to how NDI devices are discovered.
+    Uses simple UDP broadcasts for maximum compatibility.
     """
     
     def __init__(self, port: int = 9023, name: Optional[str] = None):
@@ -34,118 +54,121 @@ class ExostreamServicePublisher:
         """
         self.port = port
         self.name = name or socket.gethostname()
-        self.zeroconf: Optional[Zeroconf] = None
-        self.service_info: Optional[ServiceInfo] = None
+        self.sock: Optional[socket.socket] = None
+        self.running = False
+        self.broadcast_thread: Optional[threading.Thread] = None
+    
+    def _get_local_ip(self) -> str:
+        """Get local IP address (not 127.0.0.1)"""
+        try:
+            # Create a socket to find our actual IP
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            local_ip = s.getsockname()[0]
+            s.close()
+            return local_ip
+        except:
+            # Fallback to hostname lookup
+            try:
+                return socket.gethostbyname(socket.gethostname())
+            except:
+                return "127.0.0.1"
         
     def start(self):
-        """Start advertising the service"""
+        """Start advertising the service via UDP broadcast"""
+        if self.running:
+            logger.warning("Publisher already running")
+            return
+        
         try:
-            self.zeroconf = Zeroconf()
-            
-            # Get local IP address
+            # Get local IP
+            local_ip = self._get_local_ip()
             hostname = socket.gethostname()
-            local_ip = socket.gethostbyname(hostname)
             
-            # Create service info
-            service_name = f"{self.name}.{EXOSTREAM_SERVICE_TYPE}"
+            # Create UDP socket
+            self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
             
-            # Service properties (metadata) - must be bytes
-            properties = {
-                b'version': b'0.4.0',
-                b'type': b'exostream-daemon',
-                b'hostname': hostname.encode('utf-8')
-            }
+            self.running = True
             
-            self.service_info = ServiceInfo(
-                EXOSTREAM_SERVICE_TYPE,
-                service_name,
-                addresses=[socket.inet_aton(local_ip)],
-                port=self.port,
-                properties=properties,
-                server=f"{hostname}.local."
+            # Start broadcast thread
+            self.broadcast_thread = threading.Thread(
+                target=self._broadcast_loop,
+                args=(local_ip, hostname),
+                daemon=True
             )
+            self.broadcast_thread.start()
             
-            # Register service
-            self.zeroconf.register_service(self.service_info)
-            
-            logger.info(f"Service published: {self.name} at {local_ip}:{self.port}")
-            logger.info(f"Service name: {service_name}")
-            print(f"DEBUG: Service published: {service_name} at {local_ip}:{self.port}")
+            logger.info(f"Service publisher started: {self.name} at {local_ip}:{self.port}")
+            logger.info(f"Broadcasting on UDP port {DISCOVERY_PORT} every {BROADCAST_INTERVAL}s")
             
         except Exception as e:
-            logger.error(f"Failed to publish service: {e}")
-            print(f"DEBUG ERROR: Failed to publish: {e}")
-            import traceback
-            traceback.print_exc()
-            if self.zeroconf:
-                self.zeroconf.close()
-                self.zeroconf = None
+            logger.error(f"Failed to start service publisher: {e}")
+            self.running = False
+            if self.sock:
+                self.sock.close()
+                self.sock = None
+    
+    def _broadcast_loop(self, local_ip: str, hostname: str):
+        """Broadcast service announcement periodically"""
+        logger.debug("Broadcast loop started")
+        
+        while self.running:
+            try:
+                # Create announcement message
+                announcement = {
+                    'type': DISCOVERY_MESSAGE_TYPE,
+                    'name': self.name,
+                    'hostname': hostname,
+                    'host': local_ip,
+                    'port': self.port,
+                    'version': '0.4.0',
+                    'timestamp': time.time()
+                }
+                
+                # Broadcast to network
+                message = json.dumps(announcement).encode('utf-8')
+                self.sock.sendto(message, ('255.255.255.255', DISCOVERY_PORT))
+                
+                logger.debug(f"Broadcast sent: {self.name} at {local_ip}:{self.port}")
+                
+            except Exception as e:
+                if self.running:  # Only log if we're still supposed to be running
+                    logger.error(f"Error broadcasting: {e}")
+            
+            # Wait before next broadcast
+            time.sleep(BROADCAST_INTERVAL)
+        
+        logger.debug("Broadcast loop stopped")
     
     def stop(self):
         """Stop advertising the service"""
-        if self.zeroconf and self.service_info:
+        if not self.running:
+            return
+        
+        logger.info(f"Stopping service publisher: {self.name}")
+        self.running = False
+        
+        # Wait for broadcast thread to finish
+        if self.broadcast_thread and self.broadcast_thread.is_alive():
+            self.broadcast_thread.join(timeout=1.0)
+        
+        # Close socket
+        if self.sock:
             try:
-                logger.info(f"Unregistering service: {self.name}")
-                self.zeroconf.unregister_service(self.service_info)
-                self.zeroconf.close()
-                logger.info("Service unregistered successfully")
-            except Exception as e:
-                logger.error(f"Error unregistering service: {e}")
-            finally:
-                self.zeroconf = None
-                self.service_info = None
-
-
-class ExostreamServiceListener(ServiceListener):
-    """
-    Listener for Exostream service events
-    
-    Called when services are added, removed, or updated.
-    """
-    
-    def __init__(self, callback: Optional[Callable] = None):
-        """
-        Initialize listener
+                self.sock.close()
+            except:
+                pass
+            self.sock = None
         
-        Args:
-            callback: Function to call when services change
-        """
-        self.callback = callback
-        
-    def add_service(self, zeroconf: Zeroconf, service_type: str, name: str):
-        """Called when a service is discovered"""
-        logger.info(f"Service added: {name}")
-        print(f"DEBUG: Service added: {name}")  # Debug output
-        if self.callback:
-            info = zeroconf.get_service_info(service_type, name)
-            if info:
-                logger.info(f"Got service info for {name}: {info}")
-                print(f"DEBUG: Got service info: {info}")
-                self.callback('added', info)
-            else:
-                logger.warning(f"Could not get service info for {name}")
-                print(f"DEBUG: No service info for {name}")
-    
-    def remove_service(self, zeroconf: Zeroconf, service_type: str, name: str):
-        """Called when a service is removed"""
-        logger.debug(f"Service removed: {name}")
-        if self.callback:
-            self.callback('removed', name)
-    
-    def update_service(self, zeroconf: Zeroconf, service_type: str, name: str):
-        """Called when a service is updated"""
-        logger.debug(f"Service updated: {name}")
-        if self.callback:
-            info = zeroconf.get_service_info(service_type, name)
-            if info:
-                self.callback('updated', info)
+        logger.info("Service publisher stopped")
 
 
 class ExostreamServiceDiscovery:
     """
-    Discovers Exostream daemons on the network
+    Discovers Exostream daemons on the network via UDP broadcast
     
-    Provides a list of available daemons with their addresses and ports.
+    Listens for broadcast announcements and maintains a list of active services.
     """
     
     def __init__(self, callback: Optional[Callable] = None):
@@ -155,78 +178,200 @@ class ExostreamServiceDiscovery:
         Args:
             callback: Function to call when services change
                      Signature: callback(event_type, service_info)
+                     event_type: 'added', 'removed', 'updated'
         """
         self.callback = callback
-        self.zeroconf: Optional[Zeroconf] = None
-        self.browser: Optional[ServiceBrowser] = None
-        self.listener: Optional[ExostreamServiceListener] = None
-        self.services: Dict[str, ServiceInfo] = {}
-        
+        self.sock: Optional[socket.socket] = None
+        self.running = False
+        self.listen_thread: Optional[threading.Thread] = None
+        self.cleanup_thread: Optional[threading.Thread] = None
+        self.services: Dict[str, ExostreamServiceInfo] = {}
+        self.services_lock = threading.Lock()
+    
     def start(self):
         """Start discovering services"""
+        if self.running:
+            logger.warning("Discovery already running")
+            return
+        
         try:
-            self.zeroconf = Zeroconf()
-            self.listener = ExostreamServiceListener(self._on_service_change)
-            self.browser = ServiceBrowser(
-                self.zeroconf,
-                EXOSTREAM_SERVICE_TYPE,
-                self.listener
+            # Create UDP socket
+            self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self.sock.bind(('', DISCOVERY_PORT))
+            self.sock.settimeout(1.0)  # 1 second timeout for clean shutdown
+            
+            self.running = True
+            
+            # Start listening thread
+            self.listen_thread = threading.Thread(
+                target=self._listen_loop,
+                daemon=True
             )
-            logger.info("Service discovery started")
+            self.listen_thread.start()
+            
+            # Start cleanup thread (removes stale services)
+            self.cleanup_thread = threading.Thread(
+                target=self._cleanup_loop,
+                daemon=True
+            )
+            self.cleanup_thread.start()
+            
+            logger.info(f"Service discovery started, listening on UDP port {DISCOVERY_PORT}")
+            
         except Exception as e:
             logger.error(f"Failed to start service discovery: {e}")
-            if self.zeroconf:
-                self.zeroconf.close()
-                self.zeroconf = None
+            self.running = False
+            if self.sock:
+                self.sock.close()
+                self.sock = None
+    
+    def _listen_loop(self):
+        """Listen for broadcast announcements"""
+        logger.debug("Listen loop started")
+        
+        while self.running:
+            try:
+                # Receive broadcast message
+                data, addr = self.sock.recvfrom(4096)
+                
+                # Parse JSON message
+                try:
+                    announcement = json.loads(data.decode('utf-8'))
+                except json.JSONDecodeError:
+                    logger.debug(f"Received invalid JSON from {addr}")
+                    continue
+                
+                # Validate message type
+                if announcement.get('type') != DISCOVERY_MESSAGE_TYPE:
+                    continue
+                
+                # Extract service info
+                name = announcement.get('name')
+                hostname = announcement.get('hostname')
+                host = announcement.get('host')
+                port = announcement.get('port')
+                version = announcement.get('version', 'unknown')
+                
+                if not all([name, hostname, host, port]):
+                    logger.debug(f"Incomplete announcement from {addr}")
+                    continue
+                
+                # Create/update service info
+                service_key = f"{host}:{port}"
+                now = time.time()
+                
+                with self.services_lock:
+                    if service_key in self.services:
+                        # Update existing service
+                        old_service = self.services[service_key]
+                        self.services[service_key] = ExostreamServiceInfo(
+                            name=name,
+                            hostname=hostname,
+                            host=host,
+                            port=port,
+                            version=version,
+                            last_seen=now
+                        )
+                        
+                        event_type = 'updated'
+                        logger.debug(f"Updated service: {name} at {host}:{port}")
+                    else:
+                        # Add new service
+                        self.services[service_key] = ExostreamServiceInfo(
+                            name=name,
+                            hostname=hostname,
+                            host=host,
+                            port=port,
+                            version=version,
+                            last_seen=now
+                        )
+                        
+                        event_type = 'added'
+                        logger.info(f"Discovered service: {name} at {host}:{port}")
+                    
+                    service_info = self.services[service_key]
+                
+                # Notify callback
+                if self.callback:
+                    try:
+                        self.callback(event_type, service_info)
+                    except Exception as e:
+                        logger.error(f"Error in callback: {e}")
+                
+            except socket.timeout:
+                # Normal timeout, continue
+                continue
+            except Exception as e:
+                if self.running:  # Only log if we're still supposed to be running
+                    logger.error(f"Error receiving broadcast: {e}")
+        
+        logger.debug("Listen loop stopped")
+    
+    def _cleanup_loop(self):
+        """Remove services that haven't been seen recently"""
+        logger.debug("Cleanup loop started")
+        
+        while self.running:
+            try:
+                now = time.time()
+                removed_services = []
+                
+                with self.services_lock:
+                    # Find stale services
+                    for key, service in list(self.services.items()):
+                        if now - service.last_seen > DISCOVERY_TIMEOUT:
+                            removed_services.append((key, service))
+                            del self.services[key]
+                            logger.info(f"Service timeout: {service.name} at {service.host}:{service.port}")
+                
+                # Notify callback for removed services
+                if self.callback:
+                    for key, service in removed_services:
+                        try:
+                            self.callback('removed', service)
+                        except Exception as e:
+                            logger.error(f"Error in callback: {e}")
+                
+            except Exception as e:
+                if self.running:
+                    logger.error(f"Error in cleanup loop: {e}")
+            
+            # Check every 2 seconds
+            time.sleep(2.0)
+        
+        logger.debug("Cleanup loop stopped")
     
     def stop(self):
         """Stop discovering services"""
-        if self.browser:
-            self.browser.cancel()
-            self.browser = None
+        if not self.running:
+            return
         
-        if self.zeroconf:
+        logger.info("Stopping service discovery")
+        self.running = False
+        
+        # Wait for threads to finish
+        if self.listen_thread and self.listen_thread.is_alive():
+            self.listen_thread.join(timeout=2.0)
+        
+        if self.cleanup_thread and self.cleanup_thread.is_alive():
+            self.cleanup_thread.join(timeout=2.0)
+        
+        # Close socket
+        if self.sock:
             try:
-                self.zeroconf.close()
-            except Exception as e:
-                logger.error(f"Error closing zeroconf: {e}")
-            finally:
-                self.zeroconf = None
+                self.sock.close()
+            except:
+                pass
+            self.sock = None
         
-        self.services.clear()
+        # Clear services
+        with self.services_lock:
+            self.services.clear()
+        
         logger.info("Service discovery stopped")
     
-    def _on_service_change(self, event_type: str, data):
-        """Handle service change events"""
-        if event_type == 'added' and isinstance(data, ServiceInfo):
-            # Add service to our list
-            self.services[data.name] = data
-            logger.info(f"Discovered: {data.name}")
-            
-            # Notify callback
-            if self.callback:
-                self.callback(event_type, data)
-                
-        elif event_type == 'removed' and isinstance(data, str):
-            # Remove service from our list
-            if data in self.services:
-                del self.services[data]
-                logger.info(f"Lost: {data}")
-            
-            # Notify callback
-            if self.callback:
-                self.callback(event_type, data)
-                
-        elif event_type == 'updated' and isinstance(data, ServiceInfo):
-            # Update service in our list
-            self.services[data.name] = data
-            logger.info(f"Updated: {data.name}")
-            
-            # Notify callback
-            if self.callback:
-                self.callback(event_type, data)
-    
-    def get_services(self) -> List[Dict[str, any]]:
+    def get_services(self) -> List[Dict[str, Any]]:
         """
         Get list of discovered services
         
@@ -235,30 +380,15 @@ class ExostreamServiceDiscovery:
         """
         services = []
         
-        for name, info in self.services.items():
-            # Get IP address
-            addresses = [socket.inet_ntoa(addr) for addr in info.addresses]
-            host = addresses[0] if addresses else "unknown"
-            
-            # Get properties
-            properties = {
-                key.decode('utf-8') if isinstance(key, bytes) else key:
-                val.decode('utf-8') if isinstance(val, bytes) else val
-                for key, val in info.properties.items()
-            }
-            
-            # Create service dict
-            service = {
-                'name': name.replace(f'.{EXOSTREAM_SERVICE_TYPE}', ''),
-                'full_name': name,
-                'host': host,
-                'port': info.port,
-                'hostname': properties.get('hostname', 'unknown'),
-                'version': properties.get('version', 'unknown'),
-                'type': properties.get('type', 'unknown')
-            }
-            
-            services.append(service)
+        with self.services_lock:
+            for key, service in self.services.items():
+                services.append({
+                    'name': service.name,
+                    'hostname': service.hostname,
+                    'host': service.host,
+                    'port': service.port,
+                    'version': service.version,
+                    'last_seen': service.last_seen
+                })
         
         return services
-

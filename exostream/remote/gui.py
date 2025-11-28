@@ -727,38 +727,23 @@ class ExostreamGUI:
         event_type = data.get('event')
         service_data = data.get('data')
         
-        print(f"DEBUG GUI: Service event: {event_type}")
-        self._log(f"DEBUG: Service event: {event_type}", "DEBUG")
-        
-        if event_type == 'added':
+        if event_type == 'added' or event_type == 'updated':
             try:
-                # Add service to our list
-                name = service_data.name.replace('._exostream._tcp.local.', '')
+                # Extract service info from ExostreamServiceInfo dataclass
+                name = service_data.name
+                host = service_data.host
+                port = service_data.port
+                hostname = service_data.hostname
+                version = service_data.version
                 
-                # Get IP address
-                import socket
-                addresses = [socket.inet_ntoa(addr) for addr in service_data.addresses]
-                host = addresses[0] if addresses else "unknown"
-                
-                print(f"DEBUG GUI: Service name={name}, host={host}, port={service_data.port}")
-                
-                # Get properties
-                properties = {
-                    key.decode('utf-8') if isinstance(key, bytes) else key:
-                    val.decode('utf-8') if isinstance(val, bytes) else val
-                    for key, val in service_data.properties.items()
-                }
-                
-                print(f"DEBUG GUI: Properties: {properties}")
-                
-                display_name = f"{name} ({host}:{service_data.port})"
+                display_name = f"{name} ({host}:{port})"
                 
                 self.discovered_services[display_name] = {
                     'name': name,
                     'host': host,
-                    'port': service_data.port,
-                    'hostname': properties.get('hostname', properties.get(b'hostname', 'unknown')),
-                    'version': properties.get('version', properties.get(b'version', 'unknown'))
+                    'port': port,
+                    'hostname': hostname,
+                    'version': version
                 }
                 
                 # Update combo box
@@ -769,22 +754,20 @@ class ExostreamGUI:
                 count = len(self.discovered_services)
                 self.discovery_status.config(text=f"✓ Found {count} camera{'s' if count != 1 else ''}")
                 
-                self._log(f"Discovered: {name} at {host}:{service_data.port}")
+                if event_type == 'added':
+                    self._log(f"Discovered: {name} at {host}:{port}")
                 
             except Exception as e:
-                print(f"DEBUG GUI ERROR: {e}")
-                import traceback
-                traceback.print_exc()
                 self._log(f"Error processing service: {e}", "ERROR")
             
         elif event_type == 'removed':
-            # Remove service from our list
-            service_name = service_data.replace('._exostream._tcp.local.', '')
+            # Remove service from our list using host:port as key
+            service_key = f"{service_data.host}:{service_data.port}"
             
             # Find and remove from dict
             to_remove = None
             for display_name, info in self.discovered_services.items():
-                if info['name'] == service_name:
+                if f"{info['host']}:{info['port']}" == service_key:
                     to_remove = display_name
                     break
             
@@ -802,7 +785,7 @@ class ExostreamGUI:
                 else:
                     self.discovery_status.config(text="🔍 Discovering...")
                 
-                self._log(f"Lost: {service_name}")
+                self._log(f"Lost: {service_data.name}")
 
 
 def main():
