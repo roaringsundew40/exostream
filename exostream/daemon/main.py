@@ -383,14 +383,11 @@ class ExostreamDaemon:
                 }
                 requested_priority = level_priority.get(level_upper, 1)
                 
-                # Levels to include (requested level and higher priority)
-                levels_to_include = [
-                    level for level, priority in level_priority.items()
-                    if priority >= requested_priority
-                ]
-                
                 filtered_lines = []
                 for line in lines:
+                    line_level = None
+                    line_priority = 999  # Default to exclude if not found
+                    
                     # Match log format: YYYY-MM-DD HH:MM:SS - logger_name - LEVEL - message
                     # The level must appear between the second and third dash
                     # Pattern: ... - logger - LEVEL - ...
@@ -398,8 +395,7 @@ class ExostreamDaemon:
                     match = re.search(pattern, line)
                     if match:
                         line_level = match.group(1)
-                        if line_level in levels_to_include:
-                            filtered_lines.append(line)
+                        line_priority = level_priority.get(line_level, 999)
                     else:
                         # Fallback: try to match level at start of line for different formats
                         # Pattern: [HH:MM:SS] LEVEL message
@@ -407,8 +403,11 @@ class ExostreamDaemon:
                         match2 = re.match(pattern2, line)
                         if match2:
                             line_level = match2.group(1)
-                            if line_level in levels_to_include:
-                                filtered_lines.append(line)
+                            line_priority = level_priority.get(line_level, 999)
+                    
+                    # Only include if line priority >= requested priority (and we found a level)
+                    if line_level and line_priority >= requested_priority:
+                        filtered_lines.append(line)
                 lines = filtered_lines
             
             # Limit number of lines if specified

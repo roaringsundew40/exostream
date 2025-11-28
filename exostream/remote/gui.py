@@ -116,12 +116,22 @@ class ExostreamGUI:
         ttk.Label(discovery_frame, text="Discovered Cameras:").pack(side=tk.LEFT, padx=(0, 5))
         
         # Discovered cameras dropdown
-        self.discovered_combo = ttk.Combobox(discovery_frame, width=40, state='readonly')
+        # macOS workaround: readonly comboboxes have selection issues, so use normal state
+        # and prevent editing via event bindings
+        if sys.platform == 'darwin':  # macOS
+            self.discovered_combo = ttk.Combobox(discovery_frame, width=40, state='normal')
+            # Prevent typing
+            def prevent_edit(e):
+                if e.keysym not in ('Down', 'Up', 'Return', 'Tab', 'Escape'):
+                    return 'break'
+            self.discovered_combo.bind('<KeyPress>', prevent_edit)
+        else:
+            self.discovered_combo = ttk.Combobox(discovery_frame, width=40, state='readonly')
         self.discovered_combo.pack(side=tk.LEFT, padx=(0, 5))
         self.discovered_combo.bind('<<ComboboxSelected>>', self._on_discovered_selected)
         
         # Refresh button
-        self.refresh_discovery_btn = ttk.Button(discovery_frame, text="🔄 Refresh", command=self._refresh_discovery)
+        self.refresh_discovery_btn = ttk.Button(discovery_frame, text="Refresh", command=self._refresh_discovery)
         self.refresh_discovery_btn.pack(side=tk.LEFT, padx=(0, 5))
         
         # Manual connection section
@@ -286,9 +296,20 @@ class ExostreamGUI:
         # Log filter (level and component)
         ttk.Label(control_frame, text="Filter:").pack(side=tk.LEFT, padx=(0, 5))
         self.log_filter = tk.StringVar(value="INFO")
-        filter_combo = ttk.Combobox(control_frame, textvariable=self.log_filter,
-                                   values=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", "ALL", "TCP", "FFMPEG"],
-                                   width=10, state='readonly')
+        # macOS workaround: readonly comboboxes have selection issues
+        if sys.platform == 'darwin':  # macOS
+            filter_combo = ttk.Combobox(control_frame, textvariable=self.log_filter,
+                                       values=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", "ALL", "TCP", "FFMPEG"],
+                                       width=10, state='normal')
+            # Prevent typing
+            def prevent_edit(e):
+                if e.keysym not in ('Down', 'Up', 'Return', 'Tab', 'Escape'):
+                    return 'break'
+            filter_combo.bind('<KeyPress>', prevent_edit)
+        else:
+            filter_combo = ttk.Combobox(control_frame, textvariable=self.log_filter,
+                                       values=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", "ALL", "TCP", "FFMPEG"],
+                                       width=10, state='readonly')
         filter_combo.pack(side=tk.LEFT, padx=(0, 10))
         filter_combo.bind('<<ComboboxSelected>>', lambda e: self._refresh_device_log())
         
@@ -299,7 +320,7 @@ class ExostreamGUI:
         lines_entry.pack(side=tk.LEFT, padx=(0, 10))
         
         # Refresh button
-        ttk.Button(control_frame, text="🔄 Refresh", command=self._refresh_device_log).pack(side=tk.LEFT, padx=(0, 10))
+        ttk.Button(control_frame, text="Refresh", command=self._refresh_device_log).pack(side=tk.LEFT, padx=(0, 10))
         
         # Auto-refresh checkbox
         self.device_log_auto_refresh = tk.BooleanVar(value=False)
