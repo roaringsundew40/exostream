@@ -372,6 +372,7 @@ class ExostreamDaemon:
             
             # Filter by level if specified
             if log_params.level:
+                import re
                 level_upper = log_params.level.upper()
                 level_priority = {
                     'DEBUG': 0,
@@ -390,11 +391,24 @@ class ExostreamDaemon:
                 
                 filtered_lines = []
                 for line in lines:
-                    # Check if line contains any of the included levels
-                    for level in levels_to_include:
-                        if f" - {level} - " in line or f" - {level}:" in line:
+                    # Match log format: YYYY-MM-DD HH:MM:SS - logger_name - LEVEL - message
+                    # The level must appear between the second and third dash
+                    # Pattern: ... - logger - LEVEL - ...
+                    pattern = r' - [^-]+ - (DEBUG|INFO|WARNING|ERROR|CRITICAL) - '
+                    match = re.search(pattern, line)
+                    if match:
+                        line_level = match.group(1)
+                        if line_level in levels_to_include:
                             filtered_lines.append(line)
-                            break
+                    else:
+                        # Fallback: try to match level at start of line for different formats
+                        # Pattern: [HH:MM:SS] LEVEL message
+                        pattern2 = r'^\[.*?\] (DEBUG|INFO|WARNING|ERROR|CRITICAL) '
+                        match2 = re.match(pattern2, line)
+                        if match2:
+                            line_level = match2.group(1)
+                            if line_level in levels_to_include:
+                                filtered_lines.append(line)
                 lines = filtered_lines
             
             # Limit number of lines if specified
