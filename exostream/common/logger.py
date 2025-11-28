@@ -25,7 +25,10 @@ def setup_logger(name: str, level: str = "INFO", log_file: bool = True) -> loggi
     Returns:
         Configured logger instance
     """
-    handlers = [RichHandler(console=console, rich_tracebacks=True)]
+    # Console handler with level based on verbosity
+    console_handler = RichHandler(console=console, rich_tracebacks=True)
+    console_handler.setLevel(level)  # Console respects verbosity setting
+    handlers = [console_handler]
     
     # Add file handler if requested
     if log_file:
@@ -34,17 +37,20 @@ def setup_logger(name: str, level: str = "INFO", log_file: bool = True) -> loggi
         log_path = DEFAULT_LOG_DIR / DEFAULT_LOG_FILE
         
         # File handler with detailed format
+        # Always capture DEBUG level in file, regardless of console verbosity
         file_handler = logging.FileHandler(log_path, encoding='utf-8')
         file_formatter = logging.Formatter(
             '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
             datefmt='%Y-%m-%d %H:%M:%S'
         )
         file_handler.setFormatter(file_formatter)
-        file_handler.setLevel(level)
+        file_handler.setLevel(logging.DEBUG)  # Always capture DEBUG and above in file
         handlers.append(file_handler)
     
+    # Set root logger to DEBUG so all messages reach handlers
+    # Each handler will filter based on its own level
     logging.basicConfig(
-        level=level,
+        level=logging.DEBUG,  # Root logger accepts all levels
         format="%(message)s",
         datefmt="[%X]",
         handlers=handlers,

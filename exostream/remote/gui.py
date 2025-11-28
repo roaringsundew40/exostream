@@ -309,8 +309,21 @@ class ExostreamGUI:
         
         # Log display
         self.device_log_text = scrolledtext.ScrolledText(frame, wrap=tk.WORD, height=25, 
-                                                         font=('Courier', 9))
+                                                         font=('Courier', 9), bg='#1e1e1e', fg='#ffffff')
         self.device_log_text.pack(fill=tk.BOTH, expand=True)
+        
+        # Setup color tags for log levels (matching rich console colors)
+        self.device_log_text.tag_config('timestamp', foreground='#50a14f')  # Dark green
+        self.device_log_text.tag_config('logger', foreground='#ffffff')  # White
+        self.device_log_text.tag_config('separator', foreground='#808080')  # Gray
+        self.device_log_text.tag_config('level_debug', foreground='#a0a0a0')  # Light gray
+        self.device_log_text.tag_config('level_info', foreground='#61afef')  # Light blue
+        self.device_log_text.tag_config('level_warning', foreground='#e5c07b')  # Yellow/orange
+        self.device_log_text.tag_config('level_error', foreground='#e06c75')  # Red
+        self.device_log_text.tag_config('level_critical', foreground='#c678dd')  # Magenta
+        self.device_log_text.tag_config('message', foreground='#ffffff')  # White
+        self.device_log_text.tag_config('ip_address', foreground='#98c379')  # Bright green
+        self.device_log_text.tag_config('port', foreground='#61afef')  # Light blue/cyan
         
         # Initial message
         self.device_log_text.insert(tk.END, "Connect to a daemon to view device logs.\n")
@@ -705,6 +718,137 @@ class ExostreamGUI:
             self._refresh_device_log()
             self.device_log_refresh_job = self.root.after(5000, self._schedule_device_log_refresh)  # 5 seconds
     
+    def _insert_colored_log_line(self, log_line: str):
+        """Insert a log line with colorization matching rich console output"""
+        import re
+        
+        # Pattern: YYYY-MM-DD HH:MM:SS - logger_name - LEVEL - message
+        # Or: [HH:MM:SS] INFO Client connected from ('IP', PORT)
+        pattern1 = r'^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) - ([^-]+) - (DEBUG|INFO|WARNING|ERROR|CRITICAL) - (.+)$'
+        pattern2 = r'^\[(\d{2}:\d{2}:\d{2})\] (DEBUG|INFO|WARNING|ERROR|CRITICAL) (.+)$'
+        
+        match1 = re.match(pattern1, log_line)
+        match2 = re.match(pattern2, log_line)
+        
+        if match1:
+            # Format: YYYY-MM-DD HH:MM:SS - logger_name - LEVEL - message
+            timestamp, logger_name, level, message = match1.groups()
+            
+            # Insert timestamp
+            start = self.device_log_text.index(tk.END + '-1c')
+            self.device_log_text.insert(tk.END, timestamp)
+            end = self.device_log_text.index(tk.END + '-1c')
+            self.device_log_text.tag_add('timestamp', start, end)
+            
+            # Insert separator
+            self.device_log_text.insert(tk.END, ' - ')
+            start = self.device_log_text.index(tk.END + '-3c')
+            end = self.device_log_text.index(tk.END + '-1c')
+            self.device_log_text.tag_add('separator', start, end)
+            
+            # Insert logger name
+            start = self.device_log_text.index(tk.END + '-1c')
+            self.device_log_text.insert(tk.END, logger_name.strip())
+            end = self.device_log_text.index(tk.END + '-1c')
+            self.device_log_text.tag_add('logger', start, end)
+            
+            # Insert separator
+            self.device_log_text.insert(tk.END, ' - ')
+            start = self.device_log_text.index(tk.END + '-3c')
+            end = self.device_log_text.index(tk.END + '-1c')
+            self.device_log_text.tag_add('separator', start, end)
+            
+            # Insert level with color
+            level_tag = f'level_{level.lower()}'
+            start = self.device_log_text.index(tk.END + '-1c')
+            self.device_log_text.insert(tk.END, level)
+            end = self.device_log_text.index(tk.END + '-1c')
+            self.device_log_text.tag_add(level_tag, start, end)
+            
+            # Insert separator
+            self.device_log_text.insert(tk.END, ' - ')
+            start = self.device_log_text.index(tk.END + '-3c')
+            end = self.device_log_text.index(tk.END + '-1c')
+            self.device_log_text.tag_add('separator', start, end)
+            
+            # Insert message (with special handling for IP addresses and ports)
+            self._insert_colored_message(message)
+            
+        elif match2:
+            # Format: [HH:MM:SS] LEVEL message
+            timestamp, level, message = match2.groups()
+            
+            # Insert timestamp
+            start = self.device_log_text.index(tk.END + '-1c')
+            self.device_log_text.insert(tk.END, f'[{timestamp}]')
+            end = self.device_log_text.index(tk.END + '-1c')
+            self.device_log_text.tag_add('timestamp', start, end)
+            
+            # Insert space and level
+            self.device_log_text.insert(tk.END, ' ')
+            level_tag = f'level_{level.lower()}'
+            start = self.device_log_text.index(tk.END + '-1c')
+            self.device_log_text.insert(tk.END, level)
+            end = self.device_log_text.index(tk.END + '-1c')
+            self.device_log_text.tag_add(level_tag, start, end)
+            
+            # Insert space and message
+            self.device_log_text.insert(tk.END, ' ')
+            self._insert_colored_message(message)
+        else:
+            # Plain text line
+            self.device_log_text.insert(tk.END, log_line)
+        
+        self.device_log_text.insert(tk.END, '\n')
+    
+    def _insert_colored_message(self, message: str):
+        """Insert message with colorization for IP addresses and ports"""
+        import re
+        
+        # Pattern for: Client connected from ('IP', PORT) or ('IP',PORT)
+        ip_port_pattern = r"\(['\"]?(\d+\.\d+\.\d+\.\d+)['\"]?,\s*(\d+)\)"
+        
+        last_pos = 0
+        for match in re.finditer(ip_port_pattern, message):
+            # Insert text before match
+            if match.start() > last_pos:
+                start = self.device_log_text.index(tk.END + '-1c')
+                self.device_log_text.insert(tk.END, message[last_pos:match.start()])
+                end = self.device_log_text.index(tk.END + '-1c')
+                self.device_log_text.tag_add('message', start, end)
+            
+            # Insert opening parenthesis
+            self.device_log_text.insert(tk.END, '(')
+            
+            # Insert IP address
+            ip_addr = match.group(1)
+            start = self.device_log_text.index(tk.END + '-1c')
+            self.device_log_text.insert(tk.END, ip_addr)
+            end = self.device_log_text.index(tk.END + '-1c')
+            self.device_log_text.tag_add('ip_address', start, end)
+            
+            # Insert comma and space
+            self.device_log_text.insert(tk.END, ', ')
+            
+            # Insert port number
+            port = match.group(2)
+            start = self.device_log_text.index(tk.END + '-1c')
+            self.device_log_text.insert(tk.END, port)
+            end = self.device_log_text.index(tk.END + '-1c')
+            self.device_log_text.tag_add('port', start, end)
+            
+            # Insert closing parenthesis
+            self.device_log_text.insert(tk.END, ')')
+            
+            last_pos = match.end()
+        
+        # Insert remaining text
+        if last_pos < len(message):
+            start = self.device_log_text.index(tk.END + '-1c')
+            self.device_log_text.insert(tk.END, message[last_pos:])
+            end = self.device_log_text.index(tk.END + '-1c')
+            self.device_log_text.tag_add('message', start, end)
+    
     def _update_device_log_display(self, data: Dict[str, Any]):
         """Update device log display with new logs"""
         logs = data.get('logs', [])
@@ -720,11 +864,11 @@ class ExostreamGUI:
             if filtered_by:
                 self.device_log_text.insert(tk.END, f"Filtered by: {filtered_by}\n")
         else:
-            # Display logs
+            # Display logs with colorization
             for log_line in logs:
-                self.device_log_text.insert(tk.END, log_line + '\n')
+                self._insert_colored_log_line(log_line)
             
-            # Add summary
+            # Add summary (plain text)
             self.device_log_text.insert(tk.END, f"\n--- Total: {total_lines} lines")
             if filtered_by:
                 self.device_log_text.insert(tk.END, f" (filtered by {filtered_by})")
