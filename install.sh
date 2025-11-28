@@ -152,6 +152,12 @@ fi
 print_step "Installing build essentials..."
 sudo apt-get install -y build-essential pkg-config
 
+# Install tkinter for GUI (if available)
+print_step "Installing tkinter for GUI..."
+sudo apt-get install -y python3-tk || {
+    print_warning "python3-tk not available (GUI may not work)"
+}
+
 print_success "System dependencies complete"
 
 # ============================================================================
@@ -403,14 +409,38 @@ else
     VERIFICATION_FAILED=1
 fi
 
-# Run dependency check
-print_step "Running dependency check..."
-if python3 check_dependencies.py > /dev/null 2>&1; then
-    print_success "All dependencies verified"
-else
-    print_warning "Some dependencies may need attention"
-    print_info "Run: python3 check_dependencies.py"
+# Verify Python dependencies
+print_step "Verifying Python dependencies..."
+MISSING_DEPS=0
+
+# Check each dependency with correct import name
+if ! python3 -c "import rich" 2>/dev/null; then
+    print_error "Missing Python package: rich"
+    MISSING_DEPS=1
 fi
+
+if ! python3 -c "import click" 2>/dev/null; then
+    print_error "Missing Python package: click"
+    MISSING_DEPS=1
+fi
+
+if ! python3 -c "import yaml" 2>/dev/null; then
+    print_error "Missing Python package: pyyaml"
+    MISSING_DEPS=1
+fi
+
+if ! python3 -c "import psutil" 2>/dev/null; then
+    print_error "Missing Python package: psutil"
+    MISSING_DEPS=1
+fi
+
+if [ $MISSING_DEPS -eq 0 ]; then
+    print_success "All Python dependencies verified"
+else
+    print_warning "Some Python dependencies are missing"
+    print_info "Try running: pip3 install -r requirements.txt --user --break-system-packages"
+fi
+
 
 # Check for cameras
 print_step "Checking for video devices..."
