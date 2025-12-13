@@ -127,6 +127,21 @@ class StartStreamParams:
 
 
 @dataclass
+class StopStreamParams:
+    """Parameters for stream.stop method"""
+    device: Optional[str] = None  # None = stop all streams
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'StopStreamParams':
+        return cls(
+            device=data.get('device')
+        )
+
+
+@dataclass
 class StreamStatus:
     """Stream status information"""
     streaming: bool

@@ -183,7 +183,9 @@ def start(ctx, device, name, resolution, fps, raw_input, groups):
         console.print()
         
         # Show next steps
-        console.print("[dim]To stop streaming:[/dim]")
+        console.print("[dim]To stop this stream:[/dim]")
+        console.print(f"  [cyan]exostream stop --device {device}[/cyan]")
+        console.print("[dim]To stop all streams:[/dim]")
         console.print(f"  [cyan]exostream stop[/cyan]")
         console.print()
         
@@ -193,26 +195,49 @@ def start(ctx, device, name, resolution, fps, raw_input, groups):
 
 
 @cli.command()
+@click.option('--device', '-d', help='Device to stop (stops all streams if not specified)')
+@click.option('--all', '-a', 'stop_all', is_flag=True, help='Stop all streams')
 @click.pass_context
-def stop(ctx):
-    """Stop streaming"""
+def stop(ctx, device, stop_all):
+    """Stop streaming on one or all devices"""
     
     console.print()
-    console.print(Panel.fit(
-        "[bold yellow]Stopping Stream[/bold yellow]",
-        border_style="yellow"
-    ))
+    if device:
+        console.print(Panel.fit(
+            f"[bold yellow]Stopping Stream on {device}[/bold yellow]",
+            border_style="yellow"
+        ))
+    else:
+        console.print(Panel.fit(
+            "[bold yellow]Stopping All Streams[/bold yellow]",
+            border_style="yellow"
+        ))
     console.print()
     
     try:
         socket_path = ctx.obj.get('socket', DEFAULT_SOCKET) if ctx.obj else DEFAULT_SOCKET
         client = get_client(socket_path)
         
-        with console.status("[yellow]Stopping stream...[/yellow]"):
-            result = client.stop_stream()
+        with console.status("[yellow]Stopping stream(s)...[/yellow]"):
+            result = client.stop_stream(device=device)
+        
+        # Display result
+        if result.get('count'):
+            # Multiple streams stopped
+            message = f"[green]✓ Stopped {result['count']} stream(s)[/green]"
+            if result.get('errors'):
+                message += f"\n\n[yellow]Errors:[/yellow]"
+                for error in result['errors']:
+                    message += f"\n  • {error}"
+        else:
+            # Single stream stopped
+            if device:
+                message = f"[green]✓ Stream stopped on {device}[/green]"
+            else:
+                message = "[green]✓ Stream stopped successfully[/green]"
         
         console.print(Panel(
-            "[green]✓ Stream stopped successfully[/green]",
+            message,
             title="Success",
             border_style="green"
         ))
@@ -271,34 +296,81 @@ def status(ctx, watch):
             # Get stream status
             stream_status = client.get_stream_status()
             
-            # Stream info table
-            stream_table = Table(title="Stream", box=box.ROUNDED, show_header=False)
-            stream_table.add_column("Property", style="cyan")
-            stream_table.add_column("Value", style="yellow")
-            
-            if stream_status['streaming']:
-                stream_table.add_row("Status", "[green]✓ Streaming[/green]")
-                stream_table.add_row("Name", stream_status['stream_name'])
-                stream_table.add_row("Device", stream_status['device'])
-                stream_table.add_row("Resolution", stream_status['resolution'])
-                stream_table.add_row("FPS", str(stream_status['fps']))
-                if stream_status.get('groups'):
-                    stream_table.add_row("Groups", stream_status['groups'])
-                stream_uptime = stream_status.get('uptime_seconds', 0)
-                stream_table.add_row("Uptime", format_uptime(stream_uptime))
-                stream_table.add_row("PID", str(stream_status.get('pid', 'N/A')))
+            # Check if we have multiple streams
+            if 'streams' in stream_status and isinstance(stream_status['streams'], list):
+                # Multiple streams
+                if stream_status['streams']:
+                    # Create table for each stream
+                    for idx, stream in enumerate(stream_status['streams']):
+                        stream_table = Table(
+                            title=f"Stream {idx + 1} - {stream['device']}", 
+                            box=box.ROUNDED, 
+                            show_header=False
+                        )
+                        stream_table.add_column("Property", style="cyan")
+                        stream_table.add_column("Value", style="yellow")
+                        
+                        stream_table.add_row("Status", "[green]✓ Streaming[/green]")
+                        stream_table.add_row("Device", stream['device'])
+                        stream_table.add_row("Name", stream['stream_name'])
+                        stream_table.add_row("Resolution", stream['resolution'])
+                        stream_table.add_row("FPS", str(stream['fps']))
+                        if stream.get('groups'):
+                            stream_table.add_row("Groups", stream['groups'])
+                        stream_uptime = stream.get('uptime_seconds', 0)
+                        stream_table.add_row("Uptime", format_uptime(stream_uptime))
+                        stream_table.add_row("PID", str(stream.get('pid', 'N/A')))
+                        
+                        console.print(stream_table)
+                        console.print()
+                        
+                        # Show errors if any
+                        if stream.get('errors'):
+                            console.print(f"[red]Recent Errors for {stream['device']}:[/red]")
+                            for error in stream['errors'][-3:]:
+                                console.print(f"  [red]•[/red] {error}")
+                            console.print()
+                    
+                    # Show summary
+                    console.print(f"[cyan]Total Active Streams:[/cyan] {stream_status['stream_count']}/{stream_status.get('max_streams', 3)}")
+                    console.print()
+                else:
+                    # No streams
+                    stream_table = Table(title="Streams", box=box.ROUNDED, show_header=False)
+                    stream_table.add_column("Property", style="cyan")
+                    stream_table.add_column("Value", style="yellow")
+                    stream_table.add_row("Status", "[dim]Not streaming[/dim]")
+                    console.print(stream_table)
+                    console.print()
             else:
-                stream_table.add_row("Status", "[dim]Not streaming[/dim]")
-            
-            console.print(stream_table)
-            console.print()
-            
-            # Show errors if any
-            if stream_status.get('errors'):
-                console.print("[red]Recent Errors:[/red]")
-                for error in stream_status['errors'][-3:]:
-                    console.print(f"  [red]•[/red] {error}")
+                # Single stream (legacy format or specific device)
+                stream_table = Table(title="Stream", box=box.ROUNDED, show_header=False)
+                stream_table.add_column("Property", style="cyan")
+                stream_table.add_column("Value", style="yellow")
+                
+                if stream_status.get('streaming'):
+                    stream_table.add_row("Status", "[green]✓ Streaming[/green]")
+                    stream_table.add_row("Name", stream_status['stream_name'])
+                    stream_table.add_row("Device", stream_status['device'])
+                    stream_table.add_row("Resolution", stream_status['resolution'])
+                    stream_table.add_row("FPS", str(stream_status['fps']))
+                    if stream_status.get('groups'):
+                        stream_table.add_row("Groups", stream_status['groups'])
+                    stream_uptime = stream_status.get('uptime_seconds', 0)
+                    stream_table.add_row("Uptime", format_uptime(stream_uptime))
+                    stream_table.add_row("PID", str(stream_status.get('pid', 'N/A')))
+                else:
+                    stream_table.add_row("Status", "[dim]Not streaming[/dim]")
+                
+                console.print(stream_table)
                 console.print()
+                
+                # Show errors if any
+                if stream_status.get('errors'):
+                    console.print("[red]Recent Errors:[/red]")
+                    for error in stream_status['errors'][-3:]:
+                        console.print(f"  [red]•[/red] {error}")
+                    console.print()
             
             if not watch:
                 break
@@ -368,6 +440,13 @@ def devices(ctx):
         if free_devices:
             example_device = free_devices[0]['path']
             console.print(f"  [cyan]exostream start --name \"MyCamera\" --device {example_device}[/cyan]")
+        
+        # Show multi-stream capability
+        used_count = len([d for d in device_list if d['in_use']])
+        total_devices = len(device_list)
+        if total_devices > 1:
+            console.print()
+            console.print(f"[dim]You can run up to 3 concurrent streams ({used_count} currently active)[/dim]")
         console.print()
         
     except Exception as e:

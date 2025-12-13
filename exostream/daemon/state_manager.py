@@ -19,10 +19,15 @@ class StateManager:
     Manages daemon state persistence to disk
     
     Stores:
-    - Current streaming status
-    - Active configuration
-    - FFmpeg process info
+    - Current streaming status for all active streams
+    - Active configuration for each stream
+    - FFmpeg process info for each stream
     - Last known good configuration
+    
+    Multi-Stream Support:
+    - State file contains a 'streams' dictionary keyed by device path
+    - Each entry tracks: stream name, resolution, FPS, PID, start time, etc.
+    - Supports querying individual streams or all streams at once
     """
     
     DEFAULT_STATE_DIR = Path.home() / ".exostream"
@@ -86,17 +91,7 @@ class StateManager:
                 "started_at": None,
                 "pid": None
             },
-            "streaming": {
-                "active": False,
-                "stream_name": None,
-                "device": None,
-                "resolution": None,
-                "fps": None,
-                "raw_input": False,
-                "groups": None,
-                "started_at": None,
-                "ffmpeg_pid": None
-            },
+            "streams": {},  # Dictionary of active streams keyed by device path
             "last_config": {
                 "device": "/dev/video0",
                 "resolution": "1920x1080",
@@ -112,22 +107,24 @@ class StateManager:
             self._state["daemon"]["pid"] = pid
             self._save()
     
-    def set_streaming_active(self, config: StreamConfig, ffmpeg_pid: int):
+    def set_streaming_active(self, config: StreamConfig, ffmpeg_pid: int, raw_input: bool = False):
         """
-        Mark streaming as active
+        Mark a stream as active
         
         Args:
             config: Stream configuration
             ffmpeg_pid: FFmpeg process ID
+            raw_input: Whether using raw input
         """
         with self._lock:
-            self._state["streaming"] = {
+            device = config.device
+            self._state["streams"][device] = {
                 "active": True,
                 "stream_name": config.ndi.stream_name,
-                "device": config.device,
+                "device": device,
                 "resolution": config.video.resolution,
                 "fps": config.video.fps,
-                "raw_input": False,  # We can extend config to track this
+                "raw_input": raw_input,
                 "groups": config.ndi.groups,
                 "started_at": datetime.now().isoformat(),
                 "ffmpeg_pid": ffmpeg_pid
@@ -135,46 +132,83 @@ class StateManager:
             
             # Update last known good config
             self._state["last_config"] = {
-                "device": config.device,
+                "device": device,
                 "resolution": config.video.resolution,
                 "fps": config.video.fps,
-                "raw_input": False
+                "raw_input": raw_input
             }
             
             self._save()
-            logger.info(f"Streaming marked as active: {config.ndi.stream_name}")
+            logger.info(f"Stream marked as active: {config.ndi.stream_name} on {device}")
     
-    def set_streaming_inactive(self):
-        """Mark streaming as inactive"""
+    def set_streaming_inactive(self, device: Optional[str] = None):
+        """
+        Mark one or all streams as inactive
+        
+        Args:
+            device: Device path to stop (None = stop all streams)
+        """
         with self._lock:
-            if self._state["streaming"]["active"]:
-                stream_name = self._state["streaming"]["stream_name"]
-                self._state["streaming"]["active"] = False
-                self._state["streaming"]["stream_name"] = None
-                self._state["streaming"]["device"] = None
-                self._state["streaming"]["resolution"] = None
-                self._state["streaming"]["fps"] = None
-                self._state["streaming"]["groups"] = None
-                self._state["streaming"]["started_at"] = None
-                self._state["streaming"]["ffmpeg_pid"] = None
+            if device:
+                # Stop specific stream
+                if device in self._state["streams"]:
+                    stream_name = self._state["streams"][device].get("stream_name", device)
+                    del self._state["streams"][device]
+                    self._save()
+                    logger.info(f"Stream marked as inactive: {stream_name} on {device}")
+            else:
+                # Stop all streams
+                stream_count = len(self._state["streams"])
+                self._state["streams"] = {}
                 self._save()
-                logger.info(f"Streaming marked as inactive: {stream_name}")
+                logger.info(f"All streams marked as inactive ({stream_count} streams)")
     
-    def update_streaming_pid(self, pid: Optional[int]):
-        """Update FFmpeg PID"""
+    def update_streaming_pid(self, device: str, pid: Optional[int]):
+        """
+        Update FFmpeg PID for a specific stream
+        
+        Args:
+            device: Device path
+            pid: FFmpeg process ID
+        """
         with self._lock:
-            self._state["streaming"]["ffmpeg_pid"] = pid
-            self._save()
+            if device in self._state["streams"]:
+                self._state["streams"][device]["ffmpeg_pid"] = pid
+                self._save()
     
-    def is_streaming_active(self) -> bool:
-        """Check if streaming is currently active"""
+    def is_streaming_active(self, device: Optional[str] = None) -> bool:
+        """
+        Check if streaming is currently active
+        
+        Args:
+            device: Specific device to check (None = check if any stream is active)
+        
+        Returns:
+            True if streaming is active
+        """
         with self._lock:
-            return self._state["streaming"]["active"]
+            if device:
+                return device in self._state["streams"]
+            else:
+                return len(self._state["streams"]) > 0
     
-    def get_streaming_info(self) -> Dict[str, Any]:
-        """Get current streaming information"""
+    def get_streaming_info(self, device: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Get streaming information
+        
+        Args:
+            device: Specific device to get info for (None = get all streams)
+        
+        Returns:
+            Dictionary with stream info (single stream or all streams)
+        """
         with self._lock:
-            return dict(self._state["streaming"])
+            if device:
+                # Return specific stream info
+                return dict(self._state["streams"].get(device, {}))
+            else:
+                # Return all streams
+                return {"streams": dict(self._state["streams"])}
     
     def get_last_config(self) -> Dict[str, Any]:
         """Get last known good configuration"""
@@ -205,18 +239,21 @@ class StateManager:
                 logger.error(f"Failed to calculate uptime: {e}")
                 return None
     
-    def get_streaming_uptime_seconds(self) -> Optional[float]:
+    def get_streaming_uptime_seconds(self, device: str) -> Optional[float]:
         """
-        Get streaming uptime in seconds
+        Get streaming uptime in seconds for a specific stream
+        
+        Args:
+            device: Device path
         
         Returns:
             Uptime in seconds, or None if not streaming
         """
         with self._lock:
-            if not self._state["streaming"]["active"]:
+            if device not in self._state["streams"]:
                 return None
             
-            started_at = self._state["streaming"].get("started_at")
+            started_at = self._state["streams"][device].get("started_at")
             if not started_at:
                 return None
             
@@ -226,6 +263,26 @@ class StateManager:
             except Exception as e:
                 logger.error(f"Failed to calculate streaming uptime: {e}")
                 return None
+    
+    def get_all_streams(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Get all active streams
+        
+        Returns:
+            Dictionary of all streams keyed by device path
+        """
+        with self._lock:
+            return dict(self._state["streams"])
+    
+    def get_stream_count(self) -> int:
+        """
+        Get number of active streams
+        
+        Returns:
+            Number of active streams
+        """
+        with self._lock:
+            return len(self._state["streams"])
     
     def get_full_state(self) -> Dict[str, Any]:
         """Get complete state"""

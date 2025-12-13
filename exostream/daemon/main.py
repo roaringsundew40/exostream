@@ -24,6 +24,7 @@ from exostream.common.protocol import (
     Methods, 
     RPCError,
     StartStreamParams,
+    StopStreamParams,
     UpdateSettingsParams,
     GetLogsParams
 )
@@ -219,15 +220,22 @@ class ExostreamDaemon:
         Handle stream.stop method
         
         Args:
-            params: Parameters (currently unused)
+            params: Parameters (may include device to stop specific stream)
         
         Returns:
             Result dictionary
         """
-        logger.info("RPC: stream.stop called")
+        logger.info(f"RPC: stream.stop called with params: {params}")
+        
+        # Parse parameters
+        try:
+            stop_params = StopStreamParams.from_dict(params)
+        except Exception as e:
+            logger.warning(f"Failed to parse stop params, using defaults: {e}")
+            stop_params = StopStreamParams()
         
         try:
-            result = self.streaming_service.stop_streaming()
+            result = self.streaming_service.stop_streaming(device=stop_params.device)
             return result
         except StreamNotRunningError as e:
             raise StreamingError(f"Stream not running: {e}")
@@ -239,15 +247,17 @@ class ExostreamDaemon:
         Handle stream.status method
         
         Args:
-            params: Parameters (currently unused)
+            params: Parameters (may include device to get specific stream status)
         
         Returns:
-            Status dictionary
+            Status dictionary (single stream or all streams)
         """
-        logger.debug("RPC: stream.status called")
+        logger.debug(f"RPC: stream.status called with params: {params}")
+        
+        device = params.get("device")  # Optional device parameter
         
         try:
-            status = self.streaming_service.get_status()
+            status = self.streaming_service.get_status(device=device)
             return status
         except Exception as e:
             logger.error(f"Error getting stream status: {e}")
@@ -473,16 +483,19 @@ class ExostreamDaemon:
             # Merge with updates
             new_settings = self.settings_manager.merge_settings(current_settings, update_params)
             
-            # Check if currently streaming
-            was_streaming = self.streaming_service.is_streaming()
+            # Determine which device to update
+            target_device = update_params.device or new_settings['device']
+            
+            # Check if device is currently streaming
+            device_streaming = self.streaming_service.is_streaming(device=target_device)
             
             # If streaming and restart is requested, use graceful restart
-            if was_streaming and update_params.restart_if_streaming:
-                logger.info("Restarting stream with new settings...")
+            if device_streaming and update_params.restart_if_streaming:
+                logger.info(f"Restarting stream on {target_device} with new settings...")
                 
                 # Use graceful restart (includes rollback on failure)
                 result = self.streaming_service.restart_streaming(
-                    device=new_settings['device'],
+                    device=target_device,
                     name=new_settings.get('name'),
                     resolution=new_settings['resolution'],
                     fps=new_settings['fps'],
@@ -492,15 +505,17 @@ class ExostreamDaemon:
                 
                 return {
                     "status": "updated_and_restarted",
+                    "device": target_device,
                     "settings": new_settings,
                     "stream_info": result
                 }
             
-            elif was_streaming and not update_params.restart_if_streaming:
+            elif device_streaming and not update_params.restart_if_streaming:
                 # Settings will be applied on next stream start
-                logger.info("Stream is running but restart not requested. Settings saved for next start.")
+                logger.info(f"Stream on {target_device} is running but restart not requested.")
                 return {
                     "status": "saved_for_next_start",
+                    "device": target_device,
                     "settings": new_settings,
                     "message": "Settings will be applied when stream is restarted"
                 }

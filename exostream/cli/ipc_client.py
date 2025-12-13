@@ -292,23 +292,35 @@ class IPCClientManager:
         # Use longer timeout for start command (10s) since FFmpeg startup can be slow
         return self.client.call("stream.start", params, timeout=10.0)
     
-    def stop_stream(self) -> Dict[str, Any]:
+    def stop_stream(self, device: Optional[str] = None) -> Dict[str, Any]:
         """
         Stop streaming
+        
+        Args:
+            device: Device path to stop (None = stop all streams)
         
         Returns:
             Result dictionary
         """
-        return self.client.call("stream.stop", {})
+        params = {}
+        if device:
+            params['device'] = device
+        return self.client.call("stream.stop", params)
     
-    def get_stream_status(self) -> Dict[str, Any]:
+    def get_stream_status(self, device: Optional[str] = None) -> Dict[str, Any]:
         """
         Get stream status
+        
+        Args:
+            device: Device path to get status for (None = all streams)
         
         Returns:
             Status dictionary
         """
-        return self.client.call("stream.status", {})
+        params = {}
+        if device:
+            params['device'] = device
+        return self.client.call("stream.status", params)
     
     def list_devices(self) -> list:
         """
