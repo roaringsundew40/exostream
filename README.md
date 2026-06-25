@@ -1,804 +1,419 @@
 # Exostream
 
-**Professional NDI streaming from Raspberry Pi with a modern service-based architecture**
+**Turn a Raspberry Pi and USB webcam into a controllable network video source**
 
 [![Version](https://img.shields.io/badge/version-0.3.0-blue.svg)](https://github.com/roaringsundew40/exostream)
-[![Tests](https://img.shields.io/badge/tests-42%2F42%20passing-brightgreen.svg)](tests/)
 [![Python](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Stream webcam video over **NDI (Network Device Interface)** using FFmpeg, with a beautiful CLI and background daemon service.
+Exostream captures video from a USB webcam on a Raspberry Pi and makes it available on your local network for production tools to pick up. A background daemon handles the actual streaming; you control it from a CLI on the Pi or remotely over the network.
 
-**One-command installation • Background service • Beautiful CLI • Production ready**
+## What it does
 
-## What's New in v0.3.0
+Exostream is built for setups where you want a small, always-on camera node — a Pi on a shelf, in a studio, or at an event — that you can start, stop, and reconfigure without babysitting a terminal session.
 
-**Complete architectural rewrite!** Exostream now features:
+**Capture** — Detects V4L2-compatible webcams and reads MJPEG or raw YUYV frames from them.
 
-- **Background Daemon** - Runs as a service, no terminal required
-- **Beautiful CLI** - Rich terminal UI with colors, tables, and panels
-- **IPC Communication** - Client-server architecture via Unix sockets
-- **State Persistence** - Configuration and status survive restarts
-- **Multiple Clients** - Control from multiple terminals simultaneously
-- **Fully Tested** - 42 comprehensive tests, 100% passing
-- **Complete Documentation** - Extensive guides and examples
+**Stream** — Runs FFmpeg in the background to capture, convert, and output video. Output is delivered over **NDI** (Network Device Interface), so receivers on the same LAN can discover and use the feed without extra wiring or URL configuration.
+
+**Control** — A daemon (`exostreamd`) keeps streams running independently of your shell. The `exostream` CLI talks to it over a Unix socket. The daemon also exposes a TCP control port (default **9023**) for remote management and ships with an optional desktop GUI.
+
+**Persist** — Stream configuration and daemon state survive restarts, so a Pi can reboot and resume with the same settings.
+
+Receivers include OBS, vMix, NDI Studio Monitor, Wirecast, and other NDI-compatible software. Exostream is not a general-purpose internet streaming server — it is a local-network camera appliance.
+
+## How NDI fits in
+
+NDI is the transport layer. Exostream's job is camera capture and lifecycle management on the Pi; NDI is how the video leaves the device.
+
+1. The daemon captures frames from `/dev/video*` via FFmpeg.
+2. Frames are converted to the format NDI expects (UYVY422).
+3. FFmpeg's `libndi_newtek` output publishes a named source on the LAN.
+4. NDI clients on the same network discover that source automatically (mDNS).
+
+This gives you low-latency, production-grade video on a local network without configuring RTMP URLs or managing encoders on the receiving side. NDI handles its own compression after Exostream hands off raw frames — Exostream does not pre-encode to H.264.
+
+If you need internet streaming (YouTube, Twitch, etc.), NDI is the wrong tool; see [Alternatives](#alternatives) below.
 
 ## Features
 
-### Core Features
-- **NDI Streaming** - Industry-standard protocol for professional video over IP
-- **Automatic Discovery** - NDI streams are automatically discoverable on your network
-- **Service-Based** - Background daemon with beautiful CLI frontend
-- **State Management** - Persistent configuration across restarts
-- **Device Detection** - Automatic webcam discovery and management
-
-### Streaming Features
-- **Raw Frame Streaming** - Uncompressed frames; NDI handles compression internally
-- **Flexible Input Formats** - MJPEG (high resolution) or YUYV (lower CPU)
-- **NDI Groups** - Organize streams into groups for network management
-- **Multiple Resolutions** - 720p, 1080p, and custom resolutions
-- **Configurable FPS** - 15, 30, 60 fps support
-
-### User Experience
-- **Beautiful CLI** - Rich terminal interface with status tables
-- **Real-time Status** - Watch mode for live monitoring
-- **Clear Errors** - User-friendly error messages with solutions
-- **Works Anywhere** - No need to be in project directory
-- **Cross-Platform Clients** - View with OBS, vMix, NDI Studio Monitor, VLC
-
-## What is NDI?
-
-NDI (Network Device Interface) is a royalty-free protocol that allows video equipment to communicate over a local network. Unlike traditional streaming protocols:
-- **Zero configuration** - Streams automatically appear on the network
-- **Low latency** - Optimized for real-time video production
-- **High quality** - Handles compression intelligently
-- **Widely supported** - Works with OBS, vMix, Wirecast, and many other tools
+- **Background daemon** — Streams keep running after you close the terminal
+- **CLI with Rich UI** — Status tables, panels, and watch mode
+- **Remote control** — TCP API on port 9023; optional tkinter GUI (`python -m exostream.remote.gui`)
+- **Service discovery** — Remote clients can find Exostream instances on the network
+- **Multiple streams** — Up to 3 concurrent cameras per daemon
+- **Flexible capture** — MJPEG (best for 1080p) or raw YUYV (lower CPU at 720p)
+- **Configurable output** — Resolution, FPS, stream name, and NDI groups
+- **State persistence** — Settings stored under `~/.exostream`
 
 ## Requirements
 
 ### Hardware
+
 - Raspberry Pi 3, 4, or 5
-- USB webcam (e.g., Logitech C920, C930, or any V4L2-compatible camera)
-- Network connection (Ethernet recommended for best quality)
+- USB webcam (Logitech C920/C930 or any V4L2-compatible camera)
+- Network connection (Gigabit Ethernet recommended for 1080p)
 
 ### Software
-- Python 3.8 or higher
-- FFmpeg with NDI support
-- System packages:
+
+- Python 3.8+
+- FFmpeg compiled with NDI support (`libndi_newtek`)
+- `python3-pip` and build tools (installed automatically by `install.sh`)
 
 ```bash
 sudo apt-get update
 sudo apt-get install -y python3-pip
 ```
 
-## 🎉 New in v0.3.0: Fully Automated Installation!
-
-**Fresh Raspberry Pi to working NDI stream in ONE command!**
-
-```bash
-git clone https://github.com/roaringsundew40/exostream
-cd exostream
-./install.sh --auto
-```
-
-**That's it!** The script handles **everything automatically**:
-
-Installs Python, Git, and build tools  
-Compiles FFmpeg with NDI support (~30-60 min)  
-Installs NDI SDK for your Raspberry Pi  
-Installs Exostream package  
-Configures PATH in ~/.bashrc  
-Sets up camera permissions  
-Verifies complete installation  
-
-**After installation, use from anywhere:**
-```bash
-exostream daemon start
-exostream start --name "MyCamera"
-```
-
-**Total time**: ~60-90 minutes (mostly unattended FFmpeg compilation)  
-**User interaction**: Zero (in --auto mode)  
-**Result**: Complete working system ✨
-
-See [INSTALLATION_GUIDE.md](INSTALLATION_GUIDE.md) for details, or continue below for manual installation.
-
----
-
 ## Installation
 
-### Automated Installation (Recommended)
+### Automated (recommended)
 
-**Use the installation script** that handles everything:
+The install script handles system dependencies, FFmpeg compilation, NDI SDK setup, and PATH configuration:
 
 ```bash
 git clone https://github.com/roaringsundew40/exostream
 cd exostream
 ./install.sh           # Interactive (asks before compiling FFmpeg)
 ./install.sh --auto    # Fully automatic (for unattended install)
+./install.sh --skip-ffmpeg  # Skip FFmpeg if already installed
 ```
 
-The script will:
-1. Install system dependencies (Python, Git, build tools)
-2. Compile and install FFmpeg with NDI support
-3. Install NDI SDK for your architecture
-4. Install Exostream and configure PATH
-5. Set up permissions for camera access
-6. Verify everything works
-
-**After installation:**
-```bash
-source ~/.bashrc       # Refresh PATH
-exostream --version    # Verify
-exostream daemon start # Start using!
-```
-
-### Manual Installation
-
-If you prefer manual control or already have dependencies:
-
-### 1. Install FFmpeg with NDI Support
-
-FFmpeg needs to be compiled with NDI support. Here are your options:
-
-#### Option A: Use a Pre-compiled Binary (Easiest)
-Some distributions provide FFmpeg with NDI support. Check if yours does:
-```bash
-ffmpeg -formats 2>&1 | grep libndi_newtek
-```
-
-If you see `libndi_newtek`, you're good to go!
-
-#### Option B: Build FFmpeg with NDI Support (Recommended)
-
-This uses the [lplassman/FFMPEG-NDI repository](https://github.com/lplassman/FFMPEG-NDI/) which provides scripts to build FFmpeg with NDI support.
-
-1. **Clone the FFMPEG-NDI repository:**
-   ```bash
-   git clone https://github.com/lplassman/FFMPEG-NDI.git
-   ```
-
-2. **Clone the FFmpeg repository and checkout version 5.1 or later:**
-   ```bash
-   git clone https://git.ffmpeg.org/ffmpeg.git
-   cd ffmpeg
-   git checkout n5.1
-   ```
-
-3. **Apply generic git email and name (required for patching):**
-   ```bash
-   git config user.email "you@example.com"
-   git config user.name "You"
-   ```
-
-4. **Apply the NDI patch to restore NDI support:**
-   ```bash
-   sudo git am ../FFMPEG-NDI/libndi.patch
-   sudo cp ../FFMPEG-NDI/libavdevice/libndi_newtek_* libavdevice/
-   ```
-
-5. **Install build prerequisites:**
-   ```bash
-   sudo bash ../FFMPEG-NDI/preinstall.sh
-   ```
-
-6. **Install NDI libraries for your architecture:**
-
-   **For Raspberry Pi 4 (64-bit):**
-   ```bash
-   sudo bash ../FFMPEG-NDI/install-ndi-rpi4-aarch64.sh
-   ```
-
-   **For Raspberry Pi 4 (32-bit):**
-   ```bash
-   sudo bash ../FFMPEG-NDI/install-ndi-rpi4-armhf.sh
-   ```
-
-   **For Raspberry Pi 3 (32-bit):**
-   ```bash
-   sudo bash ../FFMPEG-NDI/install-ndi-rpi3-armhf.sh
-   ```
-
-   **For x86_64 (Intel/AMD):**
-   ```bash
-   sudo bash ../FFMPEG-NDI/install-ndi-x86_64.sh
-   ```
-
-   **For generic ARM64 or ARM32:**
-   These require the NDI Advanced SDK. Download it manually from [ndi.tv](https://ndi.tv), extract the tar file, and copy it to the ffmpeg directory, then run:
-   ```bash
-   # ARM64
-   sudo bash ../FFMPEG-NDI/install-ndi-generic-aarch64.sh
-   # OR ARM32
-   sudo bash ../FFMPEG-NDI/install-ndi-generic-armhf.sh
-   ```
-
-7. **Build and install FFmpeg:**
-   ```bash
-   ./configure --enable-nonfree --enable-libndi_newtek
-   make -j$(nproc)
-   sudo make install
-   ```
-
-8. **Verify NDI support:**
-   ```bash
-   ffmpeg -formats 2>&1 | grep libndi_newtek
-   ```
-   
-   You should see `libndi_newtek` in the output.
-
-### 2. Install Exostream
-
-**Automated Install (Recommended):**
-
-The installation script handles **everything** automatically:
-- Installs system dependencies (Python, Git, build tools)
-- Compiles FFmpeg with NDI support (optional, ~30-60 min)
-- Installs Exostream package
-- Configures PATH automatically
-- Sets up video group permissions
-- Verifies complete installation
+Compilation takes roughly 30–60 minutes on a Pi, mostly unattended. After it finishes:
 
 ```bash
-git clone https://github.com/roaringsundew40/exostream
-cd exostream
-./install.sh
+source ~/.bashrc
+exostream --version
+exostream daemon start
+exostream start --name "MyCamera"
 ```
 
-**Script Options:**
-```bash
-./install.sh              # Interactive (asks before FFmpeg compilation)
-./install.sh --auto       # Fully automatic (compiles FFmpeg)
-./install.sh --skip-ffmpeg # Skip FFmpeg (if already installed)
-./install.sh --help       # Show help
-```
+### Manual
 
-**Manual Install:**
+If you already have FFmpeg with NDI support:
 
-If you prefer manual installation or already have FFmpeg with NDI:
 ```bash
 git clone https://github.com/roaringsundew40/exostream
 cd exostream
 pip3 install -e . --user
 
-# Ensure ~/.local/bin is in your PATH
 echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
 source ~/.bashrc
 ```
 
-### 3. Verify Installation
+Verify FFmpeg has NDI:
 
 ```bash
-# Check dependencies
-python3 check_dependencies.py
-
-# Verify commands are available
-exostream --version
-exostreamd --version
-
-# Test daemon
-exostream daemon start
-exostream daemon status
-exostream daemon stop
+ffmpeg -formats 2>&1 | grep libndi_newtek
 ```
+
+If that returns nothing, see [Building FFmpeg with NDI](#building-ffmpeg-with-ndi) below.
+
+### Building FFmpeg with NDI
+
+FFmpeg must be built with `--enable-libndi_newtek`. The [lplassman/FFMPEG-NDI](https://github.com/lplassman/FFMPEG-NDI/) repository provides patches and install scripts for Raspberry Pi and x86_64.
+
+Quick check for a pre-built binary:
+
+```bash
+ffmpeg -formats 2>&1 | grep libndi_newtek
+```
+
+If not available, follow the FFMPEG-NDI README to patch FFmpeg 5.1+, install the NDI SDK for your architecture, and build:
+
+```bash
+./configure --enable-nonfree --enable-libndi_newtek
+make -j$(nproc)
+sudo make install
+```
+
+Architecture-specific NDI install scripts are included in the FFMPEG-NDI repo (`install-ndi-rpi4-aarch64.sh`, `install-ndi-rpi3-armhf.sh`, etc.).
 
 ## Usage
 
-### Quick Start
+### Quick start
 
 ```bash
-# 1. Start the daemon (runs in background)
+# Start the daemon
 exostream daemon start
 
-# 2. List your cameras
+# List cameras
 exostream devices
 
-# 3. Start streaming
+# Start streaming (appears as an NDI source named "MyCamera")
 exostream start --name "MyCamera"
 
-# 4. Check status
+# Check status
 exostream status
 
-# 5. Stop streaming
+# Stop streaming
 exostream stop
 
-# 6. Stop daemon (when done)
+# Stop daemon when done
 exostream daemon stop
-
-# Test installation
-exostream test
 ```
 
-### Daemon Management
+### Daemon management
 
 ```bash
-# Start daemon
 exostream daemon start
-exostream daemon start --verbose  # With detailed logging
-
-# Check if daemon is running
+exostream daemon start --verbose
 exostream daemon status
-
-# Health check
 exostream daemon ping
-
-# Stop daemon
 exostream daemon stop
+exostream daemon shutdown   # Graceful shutdown
 ```
 
-### Streaming Control
+### Streaming
 
-#### Start Streaming
+**Defaults:** `/dev/video0`, 1920×1080, 30 fps, MJPEG input.
 
-**Basic:**
 ```bash
+# Basic
 exostream start --name "MyCamera"
-```
 
-Default settings:
-- Device: `/dev/video0`
-- Resolution: 1920x1080
-- FPS: 30
-- Input Format: MJPEG (best for 1080p)
+# Custom device and resolution
+exostream start --name "Studio Cam" --device /dev/video2 --resolution 1280x720 --fps 30
 
-**Custom Configuration:**
-```bash
-exostream start --name "Studio Camera 1" --device /dev/video0 --resolution 1920x1080 --fps 30
-```
-
-**With NDI Groups:**
-```bash
+# NDI groups (clients filter by group)
 exostream start --name "Camera 1" --groups "Studio,Production"
-```
 
-**Lower CPU (720p with raw YUYV):**
-```bash
+# Lower CPU at 720p (raw YUYV — not recommended for 1080p)
 exostream start --name "MyCamera" --resolution 1280x720 --raw-input
-```
 
-**Note:** Most cameras only support YUYV at 720p or lower due to USB bandwidth limitations. For 1080p, use MJPEG (default).
+# Stop one device or all streams
+exostream stop --device /dev/video0
+exostream stop --all
 
-#### Stop Streaming
-```bash
-exostream stop
-```
-
-#### Check Status
-```bash
-exostream status
-
-# Watch mode (refresh every 2 seconds)
+# Live status refresh
 exostream status --watch
 ```
 
-### Device Management
+### Remote control
 
-#### List Available Cameras
-```bash
-exostream devices
-```
+The daemon listens on **TCP port 9023** by default for JSON-RPC commands (same protocol as the local Unix socket). This enables control from another machine on the network.
 
-Output shows:
-- 🟢 FREE devices (available)
-- 🔴 IN USE devices (currently streaming)
-- Device path, name, and index
-
----
-
-## Testing
-
-### Run All Tests
-
-Verify your installation with a single command:
+**Desktop GUI:**
 
 ```bash
-exostream test
+python -m exostream.remote.gui
 ```
 
-**Output:**
-```
-╭────────────────────────────╮
-│ Running Exostream Tests    │
-╰────────────────────────────╯
+The GUI supports service discovery, connection to a remote Pi, stream start/stop, and settings updates.
 
-╭─────────────────┬───────╮
-│ Category        │ Count │
-├─────────────────┼───────┤
-│ Total Tests     │    42 │
-│ Passed          │    42 │
-╰─────────────────┴───────╯
+**Programmatic access:** See `exostream/cli/network_client.py` for a Python client (`NetworkClientManager`).
 
-╭─ Success ──────────────────╮
-│ ✓ All tests passed!        │
-│ 42/42 tests successful     │
-╰────────────────────────────╯
-```
+### CLI reference
 
-### Verbose Output
+| Command | Description |
+|---------|-------------|
+| `exostream start` | Start streaming from a camera |
+| `exostream stop` | Stop one or all streams |
+| `exostream status` | Show daemon and stream status |
+| `exostream devices` | List available cameras |
+| `exostream daemon start\|stop\|status\|ping\|shutdown` | Manage the daemon |
 
-See detailed test results:
-
-```bash
-exostream test --verbose
-```
-
-Shows each test name, status, and error messages.
-
-### When to Test
-
-- **After installation** - Verify everything works
-- **After updates** - Ensure nothing broke
-- **Before deployment** - Final verification
-- **When reporting bugs** - Attach test results
-
-See [TESTING.md](TESTING.md) for complete testing guide.
-
----
-
-## Architecture
-
-Exostream v0.3.0 uses a modern service-based architecture:
-
-```
-┌─────────────────────────────────────────────┐
-│              exostream CLI                  │
-│  (User commands from any terminal)          │
-└─────────────────┬───────────────────────────┘
-                  │ Unix Socket (JSON-RPC)
-┌─────────────────▼───────────────────────────┐
-│           exostreamd Daemon                 │
-│  (Runs in background)                       │
-│                                             │
-│  ├─ IPC Server (handles commands)           │
-│  ├─ Streaming Service (manages FFmpeg)      │
-│  ├─ State Manager (persists config)         │
-│  └─ Webcam Manager (detects devices)        │
-└─────────────────┬───────────────────────────┘
-                  │
-┌─────────────────▼───────────────────────────┐
-│          FFmpeg + NDI Streaming             │
-│  (Captures from camera, streams via NDI)    │
-└─────────────────────────────────────────────┘
-```
-
-**Benefits:**
-- No terminal blocking - daemon runs in background
-- Control from anywhere - multiple clients can connect
-- State persistence - configuration survives restarts
-- Clean separation - CLI, service, and encoding layers isolated
-- Easy to automate - systemd-ready architecture
-
-## Configuration Options
-
-### Stream Start Options
+**Start options:**
 
 | Option | Short | Default | Description |
 |--------|-------|---------|-------------|
 | `--device` | `-d` | `/dev/video0` | Video device path |
-| `--name` | `-n` | Required | NDI stream name (visible to clients) |
-| `--groups` | `-g` | None | NDI groups (comma-separated) |
-| `--resolution` | `-r` | `1920x1080` | Video resolution |
+| `--name` | `-n` | *(required)* | Stream name (visible to NDI clients) |
+| `--resolution` | `-r` | `1920x1080` | Output resolution |
 | `--fps` | `-f` | `30` | Frames per second |
-| `--raw-input` | | | Use raw YUYV input (best at 720p) |
+| `--raw-input` | | off | Use YUYV instead of MJPEG |
+| `--groups` | `-g` | none | NDI groups (comma-separated) |
 
-### Global Options
-
-| Option | Short | Description |
-|--------|-------|-------------|
-| `--socket` | | Custom daemon socket path |
-| `--verbose` | `-v` | Enable verbose logging |
-| `--version` | | Show version and exit |
-| `--help` | | Show help message |
-
-## Understanding Raw Frame Streaming
-
-Unlike traditional streaming that pre-encodes video to H.264:
-- **Exostream sends raw uncompressed frames** to the NDI library
-- **NDI handles compression** using its proprietary codec
-- This provides **better quality** and **lower latency** than pre-encoded streams
-- The CPU does pixel format conversion (MJPEG→Raw or YUYV→Raw), not H.264 encoding
-
-### Input Format Notes
-
-**MJPEG Input (Default)**:
-- Supports high resolutions (1080p30)
-- Widely supported by cameras
-- Requires JPEG decoding (moderate CPU usage)
-- Recommended for 1080p streaming
-
-**YUYV Raw Input (--raw-input flag)**:
-- No decoding needed (lower CPU usage)
-- Best performance at 720p
-- USB bandwidth limited (1080p30 = ~120MB/s, exceeds USB 2.0)
-- Many cameras don't support YUYV at 1080p30
-- Recommended for 720p streaming only
-
-## Performance & Bandwidth
-
-### Network Bandwidth
-
-NDI uses approximately:
-- **720p30**: 30-50 Mbps
-- **1080p30**: 70-125 Mbps
-
-**Recommendation**: Use Gigabit Ethernet for best results. WiFi may work for 720p but is not recommended for 1080p.
-
-### CPU Usage
-
-On Raspberry Pi 4:
-- **720p30 YUYV**: ~15-25% CPU (lowest)
-- **720p30 MJPEG**: ~25-35% CPU
-- **1080p30 MJPEG**: ~40-60% CPU
-
-The CPU handles:
-1. Camera input decoding (if MJPEG)
-2. Pixel format conversion (to UYVY422 for NDI)
-3. Frame buffering and network transmission
-
-## Troubleshooting
-
-### Installation: FFmpeg NDI support not found
-
-```bash
-# Verify FFmpeg has NDI
-ffmpeg -formats 2>&1 | grep libndi_newtek
-```
-
-If not found, you need to compile FFmpeg with `--enable-libndi_newtek`. See Installation section.
-
-### No video devices found
-
-Make sure your webcam is connected and recognized:
-```bash
-ls -l /dev/video*
-```
-
-Test with:
-```bash
-exostream send --list-devices
-```
-
-### Stream not appearing on network
-
-1. **Check NDI is broadcasting**:
-   - Look for "NDI stream name: ..." in the output
-   - Make sure FFmpeg didn't error out
-
-2. **Check network connectivity**:
-   - Ensure Pi and client are on same network
-   - NDI uses mDNS - check firewall allows multicast
-
-3. **Check NDI groups**:
-   - If you specified `--groups`, make sure your client is looking in those groups
-
-### Performance issues / Stuttering
-
-1. **Lower resolution**:
-   ```bash
-   exostream send --name "MyCamera" --resolution 1280x720
-   ```
-
-2. **Use YUYV at 720p** (if camera supports it):
-   ```bash
-   exostream send --name "MyCamera" --resolution 1280x720 --raw-input
-   ```
-
-3. **Use Ethernet instead of WiFi**
-
-4. **Check CPU usage**:
-   ```bash
-   top
-   ```
-
-### Camera errors with --raw-input at 1080p
-
-This is expected! Most USB cameras can't provide YUYV at 1080p30 due to bandwidth limits:
-- Remove `--raw-input` flag to use MJPEG
-- Or use `--resolution 1280x720` with `--raw-input`
+**Global options:** `--socket`, `--verbose`, `--version`, `--help`
 
 ## Architecture
 
 ```
-Raspberry Pi (Sender)                         Client Computer
-     Webcam                                    OBS / vMix / NDI Monitor
-       ↓                                              ↑
-   V4L2 Capture                                  NDI Receiver
-   (MJPEG/YUYV)                                       ↑
-       ↓                                              ↑
-   FFmpeg Decode                                 NDI Decode
-       ↓                                              ↑
-  Raw Frames (UYVY422)                               ↑
-       ↓                                              ↑
-   NDI Encoding  ←-------- Network (mDNS) -----------┘
-   (libndi_newtek)
+┌──────────────────┐     ┌──────────────────┐
+│  exostream CLI   │     │  Remote GUI /    │
+│  (local shell)   │     │  network client  │
+└────────┬─────────┘     └────────┬─────────┘
+         │ Unix socket             │ TCP :9023
+         │ (JSON-RPC)              │ (JSON-RPC)
+         └────────────┬────────────┘
+                      ▼
+         ┌────────────────────────┐
+         │      exostreamd        │
+         │  ├─ IPC + TCP servers  │
+         │  ├─ Streaming service  │
+         │  ├─ Settings manager   │
+         │  └─ State manager      │
+         └────────────┬───────────┘
+                      ▼
+         ┌────────────────────────┐
+         │  FFmpeg (libndi_newtek)│
+         │  V4L2 → NDI output     │
+         └────────────┬───────────┘
+                      ▼
+              LAN (NDI discovery)
+                      ▼
+         OBS / vMix / NDI Monitor …
 ```
 
-### Pipeline Structure
+**Video pipeline:**
 
-The FFmpeg pipeline:
 ```
-v4l2 input → decode (if MJPEG) → pixel format conversion → 
-wrapped_avframe codec → libndi_newtek output
+v4l2 input → decode (if MJPEG) → pixel format conversion → libndi_newtek output
 ```
 
-## Project Structure
+## Capture and encoding notes
+
+Exostream sends raw frames to NDI rather than pre-encoding to H.264. NDI applies its own compression on the wire.
+
+**MJPEG (default)** — Supports 1080p30 on most cameras. Moderate CPU for JPEG decode. Recommended for high resolution.
+
+**YUYV (`--raw-input`)** — Lower CPU, no decode step. USB bandwidth limits this to 720p on most cameras; 1080p YUYV often fails or stutters.
+
+## Performance
+
+### Bandwidth (NDI, approximate)
+
+| Resolution | Bitrate |
+|------------|---------|
+| 720p30 | 30–50 Mbps |
+| 1080p30 | 70–125 Mbps |
+
+Use Ethernet for 1080p. WiFi may work for 720p.
+
+### CPU (Raspberry Pi 4, approximate)
+
+| Mode | CPU |
+|------|-----|
+| 720p30 YUYV | 15–25% |
+| 720p30 MJPEG | 25–35% |
+| 1080p30 MJPEG | 40–60% |
+
+Higher resolutions need adequate cooling for sustained use.
+
+## Troubleshooting
+
+### FFmpeg missing NDI support
+
+```bash
+ffmpeg -formats 2>&1 | grep libndi_newtek
+```
+
+If empty, rebuild FFmpeg with `--enable-libndi_newtek` or run `./install.sh`.
+
+### No video devices found
+
+```bash
+ls -l /dev/video*
+exostream devices
+```
+
+Ensure the user is in the `video` group and the camera is connected.
+
+### Stream not appearing on the network
+
+1. Confirm the stream is running: `exostream status`
+2. Pi and receiver must be on the same LAN; NDI uses mDNS (allow multicast through firewalls)
+3. If you set `--groups`, the receiver must look in those groups
+4. Check FFmpeg didn't exit: run with `exostream daemon start --verbose`
+
+### Stuttering or high CPU
+
+```bash
+exostream start --name "MyCamera" --resolution 1280x720
+exostream start --name "MyCamera" --resolution 1280x720 --raw-input  # if camera supports YUYV at 720p
+```
+
+Prefer Ethernet over WiFi. Monitor with `top`.
+
+### `--raw-input` fails at 1080p
+
+Expected — most USB cameras cannot deliver YUYV at 1080p30. Drop to 720p or remove `--raw-input` to use MJPEG.
+
+## Project structure
 
 ```
 exostream/
 ├── exostream/
-│   ├── __init__.py
-│   ├── cli.py              # Main CLI entry point
-│   ├── common/
-│   │   ├── config.py       # Configuration management (NDI, Video)
-│   │   ├── logger.py       # Logging setup with Rich
-│   │   ├── network.py      # Network utilities
-│   │   └── gst_utils.py    # GStreamer helpers (legacy)
-│   └── sender/
-│       ├── webcam.py       # V4L2 device detection
-│       ├── ffmpeg_encoder.py # FFmpeg NDI encoder
-│       └── cli.py          # Sender CLI commands
-├── requirements.txt
+│   ├── cli/                 # CLI client (exostream command)
+│   │   ├── main.py
+│   │   ├── ipc_client.py
+│   │   └── network_client.py
+│   ├── daemon/              # Background service (exostreamd)
+│   │   ├── main.py
+│   │   ├── service.py
+│   │   ├── ipc_server.py
+│   │   ├── tcp_server.py
+│   │   ├── state_manager.py
+│   │   └── settings_manager.py
+│   ├── sender/              # FFmpeg capture and NDI output
+│   │   ├── ffmpeg_encoder.py
+│   │   └── webcam.py
+│   ├── remote/              # Remote control GUI
+│   │   └── gui.py
+│   └── common/              # Config, protocol, discovery, logging
+├── install.sh
+├── uninstall.sh
 ├── setup.py
-├── check_dependencies.py   # Dependency checker
-├── test_camera.py         # Camera testing utility
-└── README.md
+└── requirements.txt
 ```
 
-## Known Limitations
+## Known limitations
 
-1. **NDI SDK Required**: FFmpeg must be compiled with NDI support
-2. **Local Network Only**: NDI is designed for local networks, not internet streaming
-3. **High Bandwidth**: NDI uses substantial bandwidth (up to 125 Mbps for 1080p)
-4. **Raspberry Pi Performance**: Higher resolutions require adequate cooling for sustained streaming
+1. **NDI SDK required** — FFmpeg must be built with NDI support
+2. **Local network only** — NDI is not designed for internet delivery
+3. **High bandwidth** — Raw-frame NDI uses substantial LAN bandwidth
+4. **No audio yet** — Video only
+5. **Pi thermals** — Sustained 1080p needs adequate cooling
 
 ## Alternatives
 
-If NDI doesn't fit your needs:
-- **For Internet Streaming**: Consider SRT, RTMP, or WebRTC
-- **For Recording**: Use H.264 encoding directly to file
-- **For Lower Bandwidth**: Consider pre-encoding to H.264 instead of raw frames
-
-## Documentation
-
-Exostream includes comprehensive documentation:
-
-- **QUICKSTART.md** - Get started in 5 minutes
-- **COMPLETE.md** - Complete project overview
-- **PROGRESS.md** - Development status and roadmap
-- **ARCHITECTURE.md** - Detailed architecture guide
-- **PHASE1_SUMMARY.md** - IPC layer documentation
-- **PHASE2_SUMMARY.md** - Daemon service documentation
-- **PHASE3_SUMMARY.md** - CLI client documentation
-
-## Development
-
-### Running Tests
-
-**All tests:**
-```bash
-python3 -m unittest discover tests -v
-```
-
-Expected: 42/42 tests passing 
-
-**Individual test suites:**
-```bash
-python3 -m unittest tests.test_ipc -v      # IPC tests (14)
-python3 -m unittest tests.test_daemon -v   # Daemon tests (19)
-python3 -m unittest tests.test_cli -v      # CLI tests (9)
-```
-
-**Test your camera:**
-```bash
-python3 test_camera.py --device /dev/video0
-```
-
-**Check dependencies:**
-```bash
-python3 check_dependencies.py
-```
-
-### Project Structure
-
-```
-exostream/
-├── exostream/
-│   ├── cli/              # CLI client
-│   │   ├── main.py       # Command implementation
-│   │   └── ipc_client.py # IPC client
-│   ├── daemon/           # Background service
-│   │   ├── main.py       # Daemon entry point
-│   │   ├── service.py    # Streaming service
-│   │   ├── ipc_server.py # IPC server
-│   │   └── state_manager.py # State persistence
-│   ├── common/           # Shared code
-│   │   ├── protocol.py   # IPC protocol
-│   │   ├── config.py     # Configuration
-│   │   └── logger.py     # Logging
-│   └── sender/           # Streaming core
-│       ├── ffmpeg_encoder.py # FFmpeg wrapper
-│       └── webcam.py     # Camera detection
-├── tests/                # Test suite
-├── docs/                 # Documentation
-└── examples/             # Example scripts
-```
-
-### Adding Features
-
-**Key components:**
-- `daemon/service.py` - Streaming service orchestration
-- `sender/ffmpeg_encoder.py` - FFmpeg process management
-- `cli/main.py` - CLI commands
-- `common/protocol.py` - IPC method definitions
-
-## Roadmap
-
-### Near Term
-- [ ] Audio support
-- [ ] Configuration file support
-- [ ] Real-time statistics display
-- [ ] Automatic reconnection on network issues
-
-### Future
-- [ ] Multiple camera support
-- [ ] NDI HX support (lower bandwidth)
-- [ ] Web-based configuration interface
-- [ ] Systemd service file for auto-start
+| Need | Consider |
+|------|----------|
+| Internet streaming | SRT, RTMP, WebRTC |
+| Recording to file | FFmpeg H.264 direct to disk |
+| Lower LAN bandwidth | NDI HX (not yet supported here) |
 
 ## FAQ
 
-**Q: Why NDI instead of RTMP/YouTube/Twitch?**  
-A: NDI is designed for professional production workflows with ultra-low latency. Use RTMP for internet streaming to platforms like YouTube.
+**Why NDI instead of RTMP?**  
+NDI targets local production workflows — switchers, OBS, and studio monitors on the same LAN — with low latency and zero URL setup. Use RTMP for platform streaming.
 
-**Q: Can I stream to the internet with this?**  
-A: NDI is for local networks. For internet streaming, consider SRT, RTMP, or WebRTC solutions.
+**Can I stream to the internet?**  
+Not with NDI. Use SRT, RTMP, or WebRTC for that.
 
-**Q: Why is my stream using so much bandwidth?**  
-A: NDI prioritizes quality and latency over bandwidth. For lower bandwidth, use NDI HX (not yet supported) or switch to H.264-based streaming.
+**Does this work on Raspberry Pi 3?**  
+Yes, but prefer 720p for stable performance.
 
-**Q: Does this work with Raspberry Pi 3?**  
-A: Yes, but 1080p may be challenging. Use 720p for best results on Pi 3.
+**Can I use multiple cameras?**  
+Yes. The daemon supports up to 3 concurrent streams — start each with a different `--device` and `--name`:
 
-**Q: Can I use multiple cameras?**  
-A: Currently, one camera per instance. You can run multiple Exostream instances with different stream names.
+```bash
+exostream start --device /dev/video0 --name "Cam A"
+exostream start --device /dev/video2 --name "Cam B"
+```
 
-## License
-
-MIT License - see LICENSE file for details
+**Why is bandwidth so high?**  
+NDI prioritizes quality and latency. It compresses on the wire, but raw-frame input still demands more bandwidth than H.264-based protocols.
 
 ## Uninstallation
 
-To remove Exostream from your system:
-
 ```bash
 cd /path/to/exostream
-./uninstall.sh
+./uninstall.sh           # Interactive
+./uninstall.sh --basic   # Remove Exostream only
+./uninstall.sh --full    # Remove Exostream, FFmpeg, and dependencies
 ```
 
-This will:
-- Stop any running daemon
-- Remove installed commands
-- Optionally remove state directory and configurations
-- Clean up PATH modifications
+Manual:
 
-**Manual uninstall:**
 ```bash
-# Stop daemon
 exostream daemon stop
-
-# Uninstall package
 pip3 uninstall exostream
-
-# Remove commands
-rm ~/.local/bin/exostream ~/.local/bin/exostreamd
-
-# Optionally remove state
-rm -rf ~/.exostream
+rm -f ~/.local/bin/exostream ~/.local/bin/exostreamd
+rm -rf ~/.exostream      # optional: remove saved state
 ```
 
 ## Upgrading
-
-To upgrade to a newer version:
 
 ```bash
 cd /path/to/exostream
@@ -806,26 +421,24 @@ git pull
 pip3 install -e . --user --force-reinstall --no-deps
 ```
 
-Or run the install script again:
-```bash
-./install.sh
-```
+Or re-run `./install.sh`.
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Pull requests are welcome. Key extension points:
+
+- `exostream/daemon/service.py` — stream orchestration
+- `exostream/sender/ffmpeg_encoder.py` — FFmpeg process management
+- `exostream/cli/main.py` — CLI commands
+- `exostream/common/protocol.py` — RPC method definitions
+
+## License
+
+MIT License
 
 ## Acknowledgments
 
-- NewTek/Vizrt for the NDI protocol and SDK
-- FFmpeg team for the excellent multimedia framework
-- Raspberry Pi Foundation for amazing hardware
-- The open source community
-
-## Support
-
-For issues and questions:
-1. Check the Troubleshooting section above
-2. Run `python3 check_dependencies.py` to verify your setup
-3. Run with `--verbose` flag for detailed logs
-4. Open an issue on GitHub with your logs
+- Vizrt/NewTek for the NDI protocol and SDK
+- FFmpeg project
+- Raspberry Pi Foundation
+- [lplassman/FFMPEG-NDI](https://github.com/lplassman/FFMPEG-NDI/) for FFmpeg NDI build tooling
